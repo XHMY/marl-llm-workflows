@@ -47,7 +47,7 @@ def _fork_worker(code, test_input, expected, conn):
         ns = {}
         exec(compiled, ns)
         inp = eval(test_input)
-        result = ns["solution"](*inp) if isinstance(inp, (list, tuple)) else ns["solution"](inp)
+        result = ns["solution"](*inp) if isinstance(inp, list | tuple) else ns["solution"](inp)
         conn.send(str(result) == expected)
     except Exception as e:
         conn.send(False)
@@ -154,14 +154,18 @@ def bench_fork_mixed(n_fast, sif_path=None):
     # 1 slow test
     parent, child = multiprocessing.Pipe(duplex=False)
     p = multiprocessing.Process(target=_fork_worker, args=(SLOW_CODE, "5", "10", child))
-    p.start(); child.close()
-    pipes.append(parent); procs.append(p)
+    p.start()
+    child.close()
+    pipes.append(parent)
+    procs.append(p)
     # n_fast fast tests
     for _ in range(n_fast):
         parent, child = multiprocessing.Pipe(duplex=False)
         p = multiprocessing.Process(target=_fork_worker, args=(TEST_CODE, TEST_INPUT, TEST_EXPECTED, child))
-        p.start(); child.close()
-        pipes.append(parent); procs.append(p)
+        p.start()
+        child.close()
+        pipes.append(parent)
+        procs.append(p)
 
     deadline = time.monotonic() + 15
     for p in procs:
@@ -169,7 +173,8 @@ def bench_fork_mixed(n_fast, sif_path=None):
         p.join(timeout=remaining)
     for p in procs:
         if p.is_alive():
-            p.kill(); p.join(timeout=5)
+            p.kill()
+            p.join(timeout=5)
     results = []
     for conn in pipes:
         try:
@@ -179,8 +184,10 @@ def bench_fork_mixed(n_fast, sif_path=None):
         finally:
             conn.close()
     for p in procs:
-        try: p.close()
-        except ValueError: pass
+        try:
+            p.close()
+        except ValueError:
+            pass
     return results
 
 

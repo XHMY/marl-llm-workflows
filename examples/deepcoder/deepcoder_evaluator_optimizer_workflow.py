@@ -493,7 +493,6 @@ class DeepcodeEvaluatorOptimizerWorkflow(CodeTestLoopMixin, EvaluatorOptimizerWo
         self._test_passed = False
         self._current_test_feedback = None
 
-        final_code = None
         final_test_result = None
 
         # Metrics tracking
@@ -638,7 +637,6 @@ class DeepcodeEvaluatorOptimizerWorkflow(CodeTestLoopMixin, EvaluatorOptimizerWo
             # End of inner eval-opt loop
             # Now run tests on the final code from this round (async for parallelism)
             test_result = await self.run_tests(task, current_response)
-            final_code = current_response
             final_test_result = test_result
 
             if test_result.all_passed:

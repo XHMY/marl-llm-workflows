@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import tinker
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer
 
 from rllm.agents.agent import Episode
 from rllm.engine.agent_workflow_engine import AgentWorkflowEngine
@@ -67,11 +67,15 @@ class TinkerWorkflowTrainer(TinkerAgentTrainer):
             shuffle=True,
             collate_fn=lambda x: x,  # Return batches as lists
         )
-        self.val_dataloader = torch.utils.data.DataLoader(
-            val_dataset,
-            batch_size=self.config.data.val_batch_size,
-            shuffle=False,
-            collate_fn=lambda x: x,  # Return batches as lists
+        self.val_dataloader = (
+            torch.utils.data.DataLoader(
+                val_dataset,
+                batch_size=self.config.data.val_batch_size,
+                shuffle=False,
+                collate_fn=lambda x: x,  # Return batches as lists
+            )
+            if val_dataset is not None
+            else None
         )
 
         service_client = tinker.ServiceClient(base_url=self.config.tinker_base_url)
@@ -81,6 +85,19 @@ class TinkerWorkflowTrainer(TinkerAgentTrainer):
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.name)
+        # Load image processor for vision-language models if needed
+        # Only attempt loading for models that likely need it (VL models)
+        image_processor = None
+        model_name_lower = self.config.model.name.lower()
+        if "vl" in model_name_lower or "vision" in model_name_lower:
+            try:
+                processor = AutoProcessor.from_pretrained(self.config.model.name, trust_remote_code=True)
+                if hasattr(processor, "image_processor") and processor.image_processor is not None:
+                    image_processor = processor.image_processor
+            except Exception:
+                # If processor loading fails, continue without it
+                pass
+
         sampling_params = self.config.sampling
         assert sampling_params.get("temperature", 1.0) == 1.0 and sampling_params.get("top_p", 1.0) == 1.0, "temperature and top_p must be 1.0 for tinker workflow trainer"
         self.rollout_engine = TinkerEngine(
@@ -91,6 +108,8 @@ class TinkerWorkflowTrainer(TinkerAgentTrainer):
             max_prompt_length=self.config.data.max_prompt_length,
             max_response_length=self.config.data.max_response_length,
             sampling_params=sampling_params,
+            **self.config.rollout_engine,
+            image_processor=image_processor,  # VLM support - explicit after spread to ensure it's used
         )
         self.agent_execution_engine = AgentWorkflowEngine(
             workflow_cls=self.workflow_class,
@@ -99,6 +118,8 @@ class TinkerWorkflowTrainer(TinkerAgentTrainer):
             config=self.config,
             n_parallel_tasks=self.config.workflow.n_parallel_tasks,
             retry_limit=self.config.workflow.retry_limit,
+            code_executor_workers=getattr(self.config.workflow, "code_executor_workers", 0),
+            max_concurrent_code_execs=getattr(self.config.workflow, "max_concurrent_code_execs", 0),
         )
         self.n_parallel_tasks = self.config.workflow.n_parallel_tasks
         # Track number of batches for progress calculation
@@ -211,7 +232,8 @@ class TinkerWorkflowTrainer(TinkerAgentTrainer):
                     if not step.logprobs:
                         step.logprobs = model_output.logprobs
 
-        assert step.prompt_ids, "prompt_ids is None"
+        # For VLM prompts, prompt_ids may be empty list (to_ints() not supported for ImageChunks)
+        assert step.prompt_ids is not None, "prompt_ids is None"
         assert step.response_ids, "response_ids is None"
         assert step.logprobs, "logprobs is None"
 

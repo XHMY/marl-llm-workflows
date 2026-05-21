@@ -1,126 +1,109 @@
-<div align="center">
+# When Does Multi-Agent RL Training Improve LLM Workflows?
 
-# rLLM
+Code and experiments for the arxiv paper **"When Does Multi-Agent RL Training Improve LLM Workflows?"** ([arxiv link TODO]).
 
-<div>
-🚀 Reinforcement Learning for Language Agents🌟
-</div>
-</div>
-<div>
-<br>
+We study end-to-end RL training of multi-agent LLM workflows: when does jointly training roles in a workflow (voting, evaluator-optimizer, orchestrator-workers) improve over the base model, and when does training peak and then collapse? The paper presents an empirical map across workflows × scales × tasks × policy-sharing strategies, and explains the strongest patterns through role-level gradient mechanisms.
 
-<div align="center">
-  
-[![Documentation](https://img.shields.io/badge/Documentation-blue?style=for-the-badge&logo=googledocs&logoColor=white)](https://rllm-project.readthedocs.io/en/latest)
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BDH46HT9en)
-[![Website](https://img.shields.io/badge/Site-%233f72af.svg?style=for-the-badge&logo=semanticweb&logoColor=white)](https://rllm-project.com)
-[![Blogs](https://img.shields.io/badge/Blogs-007AFF?style=for-the-badge)](https://rllm-project.com/blog)
-[![X](https://img.shields.io/badge/-black?logo=X&style=for-the-badge)](https://x.com/rllm_project)
+## Built on rllm
 
-</div>
+This repository is a research fork of [rllm v0.2.1](https://github.com/rllm-org/rllm) ([Tan et al., 2025](https://pretty-radio-b75.notion.site/rLLM-A-Framework-for-Post-Training-Language-Agents-21b81902c146819db63cd98a54ba5f31)). It adds:
 
-</div>
+- Three multi-agent workflows (voting, evaluator-optimizer, orchestrator-workers) plus a single-agent baseline.
+- Multi-agent LoRA: per-role adapters with a shared-policy / isolated-policy toggle.
+- A multi-agent PPO trainer (GRPO + per-agent advantages + per-agent metrics).
+- An experiment launcher and checkpoint evaluator under `dashboard/`.
 
-rLLM is an open-source framework for post-training language agents via reinforcement learning. With rLLM, you can easily build your custom agents and environments, train them with reinforcement learning, and deploy them for real-world workloads.
+The training backend (`verl/`) is a git submodule of [our verl fork](https://github.com/XHMY/verl), pinned to the `rllm-0.2.1-local` branch — upstream verl `v0.6.1` plus one commit that adds the multi-agent LoRA and agent-loop changes used in this repository (see [docs/multi-agent/lora-implementation.md](docs/multi-agent/lora-implementation.md)).
 
-## Releases 📰
+## Installation
 
-<strong>[2025/10/16]</strong> rLLM [v0.2](https://github.com/rllm-org/rllm/tree/v0.2) is now officially released! We introduce `AgentWorkflowEngine` for training over arbitrary agentic programs. It also comes integrated with the official `verl-0.5.0`, featuring support for Megatron training. Check out this [blog post](https://rllm-project.com/post.html?post=rllm_v0.2.md) for more.
-
-<strong>[2025/07/01]</strong> We release [`DeepSWE-Preview`](https://pretty-radio-b75.notion.site/DeepSWE-Training-a-Fully-Open-sourced-State-of-the-Art[…]-by-Scaling-RL-22281902c1468193aabbe9a8c59bbe33?pvs=73), a 32B software engineering agent (SWE) trained with purely RL that achieves 59% on SWEBench-Verified with test-time scaling,(42.2% Pass@1), topping the SWEBench leaderboard for open-weight models.
-
-<strong>[2025/04/08]</strong> We release [`DeepCoder-14B-Preview`](https://pretty-radio-b75.notion.site/DeepCoder-A-Fully-Open-Source-14B-Coder-at-O3-mini-Level-1cf81902c14680b3bee5eb349a512a51), a 14B coding model that achieves an impressive **60.6%** Pass@1 accuracy on LiveCodeBench (+8% improvement), matching the performance of `o3-mini-2025-01-031 (Low)` and `o1-2024-12-17`. 
-
-<strong>[2025/02/10]</strong> We release [`DeepScaleR-1.5B-Preview`](https://pretty-radio-b75.notion.site/DeepScaleR-Surpassing-O1-Preview-with-a-1-5B-Model-by-Scaling-RL-19681902c1468005bed8ca303013a4e2), a 1.5B model that surpasses O1-Preview and achieves <strong>43.1% Pass@1</strong> on AIME. We achieve this by iteratively scaling Deepseek's GRPO algorithm from 8K→16K->24K context length for thinking.
-
-## Getting Started 🎯
-
-### Step 1: Building rLLM
-
-rLLM requires Python >= 3.11. You can install it either directly via pip or build from source.
-
-**Option A: Direct Installation**
+Requires Python 3.11 and a CUDA-capable GPU. The recommended path is `uv`:
 
 ```bash
-uv pip install "git+https://github.com/rllm-org/rllm.git"
+git clone --recurse-submodules <repo-url>
+cd rllm_0.2.1
+
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e .[verl]
 ```
 
-**Option B: Building from Source**
+If you cloned without `--recurse-submodules`, initialize the submodules separately:
 
 ```bash
-# Clone the repository
-git clone https://github.com/rllm-org/rllm.git
-cd rllm
-
-# Create a conda environment
-conda create -n rllm python=3.11 -y
-conda activate rllm
-
-# Build rLLM from source
-uv pip install -e .
-```
-
-### Step 2: Installing Training Backend
-
-rLLM supports two training backends: `verl` and `Tinker`. Choose one based on your needs.
-
-**Option A: Using `verl` as Training Backend**
-
-```bash
-# Initialize and update the verl submodule
 git submodule update --init --recursive
-
-# Install verl
-bash scripts/install_verl.sh
 ```
 
-**Option B: Using `Tinker` as Training Backend**
+For alternate install paths (direct pip install from git, Docker, or Tinker as a training backend), see the [upstream rllm installation guide](https://rllm-project.readthedocs.io/en/latest/getting-started/installation).
 
-No additional installation needed. `tinker` and `tinker-cookbook` are pre-installed when you install rLLM.
+## Quick start
 
-> **Note:** The direct pip installation (Option A in Step 1) comes with Tinker as the default training backend. If you want to use `verl`, you'll need to build from source (Option B in Step 1) and then install `verl` (Option A in Step 2).
-
-### Installation with Docker 🐳
-
-For a containerized setup, you can use Docker:
+Launch one cell of the experimental matrix — voting workflow, isolated policy, 1.7B model, math task — on a 2× H100 node:
 
 ```bash
-# Build the Docker image
-docker build -t rllm .
-
-# Create and start the container
-docker create --runtime=nvidia --gpus all --net=host --shm-size="10g" --cap-add=SYS_ADMIN -v .:/workspace/rllm -v /tmp:/tmp --name rllm-container rllm sleep infinity
-docker start rllm-container
-
-# Enter the container
-docker exec -it rllm-container bash
+bash dashboard/launch_experiment.sh \
+    --workflow voting \
+    --model 1.7B \
+    --share-policy false \
+    --slurm-config dashboard/slurm_config_template.conf \
+    --n-gpus 2 --cpus-per-gpu 8 --mem-per-gpu 128G
 ```
 
-## Awesome Projects using rLLM 🔥
+Copy `dashboard/slurm_config_template.conf` first and fill in the placeholders (partition, account, time limit, GPU constraint) for your cluster. Add `--dry-run` to preview the generated sbatch script without submitting. See [docs/multi-agent/running-experiments.md](docs/multi-agent/running-experiments.md) for the full set of CLI flags and the procedure for training every cell in the matrix.
 
-* [DeepScaleR](https://pretty-radio-b75.notion.site/DeepScaleR-Surpassing-O1-Preview-with-a-1-5B-Model-by-Scaling-RL-19681902c1468005bed8ca303013a4e2): Surpassing O1-Preview with a 1.5B Model by Scaling RL
-* [DeepCoder](https://pretty-radio-b75.notion.site/DeepCoder-A-Fully-Open-Source-14B-Coder-at-O3-mini-Level-1cf81902c14680b3bee5eb349a512a51): A Fully Open-Source 14B Coder at O3-mini Level
-* [DeepSWE](https://pretty-radio-b75.notion.site/DeepSWE-Training-a-Fully-Open-sourced-State-of-the-Art[%E2%80%A6]-by-Scaling-RL-22281902c1468193aabbe9a8c59bbe33): Training a Fully Open-sourced, State-of-the-Art Coding Agent by Scaling RL
-* [Tongyi DeepResearch](https://github.com/Alibaba-NLP/DeepResearch): A New Era of Open-Source AI Researchers [![GitHub Repo stars](https://img.shields.io/github/stars/Alibaba-NLP/DeepResearch)](https://github.com/Alibaba-NLP/DeepResearch)
-* [Terminal-Bench-RL](https://github.com/Danau5tin/terminal-bench-rl): Training Long-Horizon Terminal Agents with Reinforcement Learning [![GitHub Repo stars](https://img.shields.io/github/stars/Danau5tin/terminal-bench-rl)](https://github.com/Danau5tin/terminal-bench-rl)
-* [Cogito, Ergo Ludo](https://www.arxiv.org/abs/2509.25052): An Agent that Learns to Play by Reasoning and Planning
-* [PettingLLMs](https://pettingllms-ai.github.io/): Using On-Policy Reinforcement Learning for Stronger Multi-Agent System [![GitHub Repo stars](https://img.shields.io/github/stars/pettingllms-ai/PettingLLMs)](https://github.com/pettingllms-ai/PettingLLMs)
+## Multi-Agent RL extensions
 
+The implementation diff against upstream rllm is documented under `docs/multi-agent/`:
 
+| Topic | Page |
+|---|---|
+| Overview of what this fork adds | [docs/multi-agent/index.md](docs/multi-agent/index.md) |
+| The three multi-agent workflows + single-agent baseline | [docs/multi-agent/workflows.md](docs/multi-agent/workflows.md) |
+| Isolated-Policy (IP) vs Shared-Policy (SP) | [docs/multi-agent/policy-sharing.md](docs/multi-agent/policy-sharing.md) |
+| Multi-agent LoRA implementation | [docs/multi-agent/lora-implementation.md](docs/multi-agent/lora-implementation.md) |
+| Training loop and PPO config | [docs/multi-agent/training.md](docs/multi-agent/training.md) |
+| Trajectory dumps, checkpoint evaluation, code-execution modes | [docs/multi-agent/trajectories-and-eval.md](docs/multi-agent/trajectories-and-eval.md) |
+| wandb metrics and checkpoint structure | [docs/multi-agent/monitoring.md](docs/multi-agent/monitoring.md) |
+| End-to-end recipe (install → train → eval) | [docs/multi-agent/running-experiments.md](docs/multi-agent/running-experiments.md) |
+| Intervention design notes (per-role KL anchor, coherence regularizer) | [docs/multi-agent/interventions/](docs/multi-agent/interventions/i1-per-role-kl-anchor.md) |
 
-## Acknowledgements
-Our work is done as part of [Berkeley Sky Computing Lab](https://sky.cs.berkeley.edu/). The rLLM team is generously supported by grants from [Laude Institute](https://www.laude.org/), [AWS](https://aws.amazon.com/), [Hyperbolic](https://www.hyperbolic.ai/), [Fireworks AI](https://fireworks.ai/), and [Modal](https://modal.com/). We pay special thanks to [Together AI](https://www.together.ai/) for the research partnership and compute support. 
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| `rllm/` | rllm framework (forked from upstream); multi-agent workflows live in `rllm/workflows/` and the multi-agent trainer in `rllm/trainer/verl/agent_workflow_trainer.py`. |
+| `verl/` | Training backend (git submodule). Multi-agent LoRA support in `verl/verl/workers/fsdp_workers.py`. |
+| `examples/math_reasoning/` | Math experiment entry points (voting / eval-opt / orch-workers / single-agent baseline). |
+| `examples/deepcoder/` | DeepCoder code-generation entry points. |
+| `dashboard/` | Experiment launcher (`launch_experiment.sh`), checkpoint evaluator (`evaluate_checkpoints.py`), SLURM config template. |
+| `scripts/` | General utilities (LoRA extraction / merging, checkpoint verification, dataset prep). |
+
+## Running the experiments
+
+1. **Install** as above.
+2. **Configure SLURM** by copying `dashboard/slurm_config_template.conf` and filling in the placeholders (partition, account, time limit, GPU type) for your cluster.
+3. **Launch experiments** from `dashboard/launch_experiment.sh` — one cell per invocation across the workflow × policy × scale × task matrix.
+4. **Evaluate checkpoints** with `python dashboard/evaluate_checkpoints.py --use-training-lengths`. Trajectories land under `evaluation_trajectories/` and per-checkpoint accuracy in `<experiment_dir>/eval_results.jsonl`.
+
+The complete step-by-step recipe is in [docs/multi-agent/running-experiments.md](docs/multi-agent/running-experiments.md).
 
 ## Citation
+
+If you use this code or the experiments, please cite the paper:
+
 ```bibtex
-@misc{rllm2025,
-  title={rLLM: A Framework for Post-Training Language Agents},
-  author={Sijun Tan and Michael Luo and Colin Cai and Tarun Venkat and Kyle Montgomery and Aaron Hao and Tianhao Wu and Arnav Balyan and Manan Roongta and Chenguang Wang and Li Erran Li and Raluca Ada Popa and Ion Stoica},
-  year={2025},
-  howpublished={\url{https://pretty-radio-b75.notion.site/rLLM-A-Framework-for-Post-Training-Language-Agents-21b81902c146819db63cd98a54ba5f31}},
-  note={Notion Blog}
-  year={2025}
+@misc{multi_agent_rl_workflows_2026,
+  title  = {When Does Multi-Agent RL Training Improve LLM Workflows?},
+  author = {TODO},
+  year   = {2026},
+  note   = {arxiv preprint; [arxiv link TODO]}
 }
 ```
 
-You may also cite our prior work [DeepScaleR](https://scholar.googleusercontent.com/scholar.bib?q=info:PrmBADk39GwJ:scholar.google.com/&output=citation&scisdr=CgIJFx-xEMCQ6zOgcuI:AAZF9b8AAAAAaPCmauIfzg8Rm9ImNYDad0uPUK8&scisig=AAZF9b8AAAAAaPCmahXsNqb1jTQBw2iPfw2vm9g&scisf=4&ct=citation&cd=-1&hl=en&scfhb=1), [DeepCoder](https://scholar.googleusercontent.com/scholar.bib?q=info:xpZNEPI6opAJ:scholar.google.com/&output=citation&scisdr=CgIJFx-xEMCQ6zOgjM8:AAZF9b8AAAAAaPCmlM_hb3S0tzBSVrRYBZYDLWg&scisig=AAZF9b8AAAAAaPCmlG109SG8d8230AiDP4jMxlw&scisf=4&ct=citation&cd=-1&hl=en&scfhb=1), and [DeepSWE](https://scholar.googleusercontent.com/scholar.bib?q=info:J9rT3SnY_aMJ:scholar.google.com/&output=citation&scisdr=CgIJFx-xEMCQ6zOg3D4:AAZF9b8AAAAAaPCmxD7Nl0xA_AcAeydpcE1BXCo&scisig=AAZF9b8AAAAAaPCmxE2Spzf5lf-2Toys5xEpnuA&scisf=4&ct=citation&cd=-1&hl=en&scfhb=1).
+## Acknowledgments
+
+Built on the [rllm framework](https://github.com/rllm-org/rllm) .
+
+## License
+
+This repository inherits the upstream rllm license — see `LICENSE`.

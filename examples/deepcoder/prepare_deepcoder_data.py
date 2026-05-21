@@ -1,14 +1,59 @@
 import json
+import os
 
-from datasets import concatenate_datasets, load_dataset
+from datasets import load_dataset
 
 from rllm.data.dataset import DatasetRegistry
 from rllm.data.utils import fetch_live_code_bench_system_prompt
 
 
-def prepare_deepcoder_data(train_size: int = None, test_size: int = None):
-    train_dataset = concatenate_datasets([load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="primeintellect", split="train"), load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="taco", split="train"), load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="lcbv5", split="train")])
-    test_dataset = concatenate_datasets([load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="codeforces", split="test"), load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="lcbv5", split="test")])
+def prepare_deepcoder_data(train_size: int = None, test_size: int = None, dataset_name: str = "deepcoder_primeintellect"):
+    # Load runtime results for test case filtering
+    runtime_results_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "coding_dataset_filtering", "runtime_results.json"
+    )
+    with open(runtime_results_path) as f:
+        runtime_results = json.load(f)
+
+    # Load only primeintellect subset
+    dataset = load_dataset("agentica-org/DeepCoder-Preview-Dataset", name="primeintellect", split="train")
+
+    # Filter test cases to only keep those that passed runtime checks
+    def filter_tests_by_runtime(example, idx, runtime_results):
+        problem_key = str(idx)
+        if problem_key not in runtime_results:
+            example["_num_passing_tests"] = -1
+            return example
+
+        problem_runtime = runtime_results[problem_key]
+        tests_raw = example["tests"]
+        if isinstance(tests_raw, str):
+            tests = json.loads(tests_raw)
+        else:
+            tests = tests_raw
+
+        filtered_tests = [
+            test for test_idx, test in enumerate(tests)
+            if str(test_idx) in problem_runtime
+            and problem_runtime[str(test_idx)].get("status") == "passed"
+        ]
+
+        example["tests"] = json.dumps(filtered_tests)
+        example["_num_passing_tests"] = len(filtered_tests)
+        return example
+
+    dataset = dataset.map(
+        filter_tests_by_runtime, with_indices=True, num_proc=1,
+        fn_kwargs={"runtime_results": runtime_results}
+    )
+    dataset = dataset.filter(lambda example: example["_num_passing_tests"] != 0)
+    dataset = dataset.remove_columns(["_num_passing_tests"])
+
+    # Train/test split: 1000 for test, rest for train
+    dataset = dataset.shuffle(seed=42)
+    test_dataset = dataset.select(range(1000))
+    train_dataset = dataset.select(range(1000, len(dataset)))
 
     def preprocess_fn(example, idx):
         starter_code = example.get("starter_code", "")
@@ -46,10 +91,10 @@ def prepare_deepcoder_data(train_size: int = None, test_size: int = None):
     if test_size:
         test_dataset = test_dataset.select(range(min(test_size, len(test_dataset))))
 
-    train_dataset = train_dataset.map(preprocess_fn, with_indices=True, writer_batch_size=10, num_proc=16)
-    test_dataset = test_dataset.map(preprocess_fn, with_indices=True, writer_batch_size=10, num_proc=16)
-    train_dataset = DatasetRegistry.register_dataset("deepcoder", train_dataset, "train")
-    test_dataset = DatasetRegistry.register_dataset("deepcoder", test_dataset, "test")
+    train_dataset = train_dataset.map(preprocess_fn, with_indices=True, writer_batch_size=10, num_proc=16, remove_columns=train_dataset.column_names)
+    test_dataset = test_dataset.map(preprocess_fn, with_indices=True, writer_batch_size=10, num_proc=16, remove_columns=test_dataset.column_names)
+    train_dataset = DatasetRegistry.register_dataset(dataset_name, train_dataset, "train")
+    test_dataset = DatasetRegistry.register_dataset(dataset_name, test_dataset, "test")
 
     return train_dataset, test_dataset
 

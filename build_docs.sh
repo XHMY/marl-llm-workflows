@@ -21,5 +21,5 @@ if [ "$1" == "serve" ]; then
 fi
 
 echo "Documentation built successfully!"
-echo "To serve the documentation, run: cd docs && mkdocs serve"
-echo "To view the built documentation, open: docs/site/index.html" 
+echo "To serve the documentation, run: mkdocs serve"
+echo "To view the built documentation, open: site/index.html"

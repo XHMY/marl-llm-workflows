@@ -3,7 +3,7 @@ import socket
 
 import hydra
 import ray
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
 from verl.trainer.ppo.reward import load_reward_manager
 from verl.utils.device import is_cuda_available
@@ -77,6 +77,12 @@ class PipelineTaskRunner:
         OmegaConf.register_new_resolver("mul", lambda x, y: int(x) * int(y))
         OmegaConf.resolve(config)
         pprint(OmegaConf.to_container(config))
+
+        with open_dict(config):
+            config.actor_rollout_ref.share_policy = config.trainer.get("share_policy", False)
+            config.actor_rollout_ref.agent_names = config.trainer.get("agent_names", [])
+            config.actor_rollout_ref.rollout.max_loras = len(config.actor_rollout_ref.agent_names)
+            config.actor_rollout_ref.ori_single_policy_no_lora_mode = config.trainer.get("ori_single_policy_no_lora_mode", False)
 
         # Download the checkpoint from HDFS to the local machine.
         # `use_shm` determines whether to use shared memory, which could lead to faster model loading if turned on

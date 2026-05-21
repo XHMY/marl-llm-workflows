@@ -65,6 +65,7 @@ class Tracking:
     Attributes:
         supported_backend: List of supported tracking backends.
         logger: Dictionary of initialized logger instances for each backend.
+        wandb_run_id: The wandb run ID if wandb is enabled, None otherwise.
     """
 
     supported_backend = [
@@ -79,7 +80,29 @@ class Tracking:
         "file",
     ]
 
-    def __init__(self, project_name, experiment_name, default_backend: str | list[str] = "console", config=None):
+    def __init__(
+        self,
+        project_name,
+        experiment_name,
+        default_backend: str | list[str] = "console",
+        config=None,
+        resume_run_id: str = None,
+        resume_mode: str = None,
+    ):
+        """Initialize tracking with optional resume support.
+
+        Args:
+            project_name: The project name for tracking backends.
+            experiment_name: The experiment/run name.
+            default_backend: Backend(s) to use for logging.
+            config: Configuration dictionary to log.
+            resume_run_id: Optional wandb run ID to resume. If provided with resume_mode,
+                          will attempt to resume that specific run.
+            resume_mode: Resume mode for wandb ("must", "allow", or None).
+                        - "must": Fail if run cannot be resumed
+                        - "allow": Resume if possible, create new run otherwise
+                        - None: Always create a new run
+        """
         if isinstance(default_backend, str):
             default_backend = [default_backend]
         for backend in default_backend:
@@ -91,6 +114,8 @@ class Tracking:
                 assert backend in self.supported_backend, f"{backend} is not supported"
 
         self.logger = {}
+        self._finished = False  # Track whether finish() has been called
+        self._wandb_run_id = None
 
         if "tracking" in default_backend or "wandb" in default_backend:
             import wandb
@@ -98,7 +123,31 @@ class Tracking:
             settings = None
             if config and config["trainer"].get("wandb_proxy", None):
                 settings = wandb.Settings(https_proxy=config["trainer"]["wandb_proxy"])
-            wandb.init(project=project_name, name=experiment_name, config=config, settings=settings)
+
+            init_kwargs = {
+                "project": project_name,
+                "name": experiment_name,
+                "config": config,
+                "settings": settings,
+            }
+
+            if resume_run_id and resume_mode:
+                # Resume with specific run ID
+                init_kwargs["id"] = resume_run_id
+                init_kwargs["resume"] = resume_mode
+                print(f"Attempting to resume wandb run with ID: {resume_run_id}")
+            elif resume_mode == "allow":
+                # Fallback: find run by experiment_name using wandb API
+                run_id = self._find_run_by_name(project_name, experiment_name)
+                if run_id:
+                    init_kwargs["id"] = run_id
+                    init_kwargs["resume"] = "allow"
+                    print(f"Found existing wandb run by name, resuming: {run_id}")
+                else:
+                    print("No existing wandb run found, creating new run")
+
+            wandb.init(**init_kwargs)
+            self._wandb_run_id = wandb.run.id if wandb.run else None
             self.logger["wandb"] = wandb
 
         if "trackio" in default_backend:
@@ -182,7 +231,50 @@ class Tracking:
             if backend is None or default_backend in backend:
                 logger_instance.log(data=data, step=step)
 
-    def __del__(self):
+    @property
+    def wandb_run_id(self) -> str | None:
+        """Return the current wandb run ID, if wandb is enabled."""
+        return self._wandb_run_id
+
+    def _find_run_by_name(self, project_name: str, experiment_name: str) -> str | None:
+        """Find a wandb run by experiment name using the wandb API.
+
+        This is used as a fallback when resuming from a checkpoint that doesn't have
+        a saved wandb run ID (backward compatibility with older checkpoints).
+
+        Args:
+            project_name: The wandb project name.
+            experiment_name: The experiment/run name to search for.
+
+        Returns:
+            The run ID of the most recent matching run, or None if not found.
+        """
+        try:
+            import wandb
+
+            api = wandb.Api()
+            # Query for runs with matching name, sorted by creation time (most recent first)
+            runs = api.runs(
+                path=project_name,
+                filters={"display_name": experiment_name},
+                order="-created_at",
+            )
+            # Return the most recent run's ID
+            for run in runs:
+                return run.id
+        except Exception as e:
+            print(f"Warning: Failed to find wandb run by name: {e}")
+        return None
+
+    def finish(self):
+        """Explicitly finish and cleanup all loggers.
+
+        This method should be called during controlled shutdown to ensure proper cleanup.
+        It's safe to call multiple times - subsequent calls will be no-ops.
+        """
+        if self._finished:
+            return
+
         if "wandb" in self.logger:
             self.logger["wandb"].finish(exit_code=0)
         if "swanlab" in self.logger:
@@ -197,6 +289,17 @@ class Tracking:
             self.logger["trackio"].finish()
         if "file" in self.logger:
             self.logger["file"].finish()
+
+        self.logger.clear()
+        self._finished = True
+
+    def __del__(self):
+        """Destructor that ensures cleanup if finish() wasn't called explicitly.
+
+        Note: Prefer calling finish() explicitly during shutdown rather than relying
+        on __del__, as garbage collection timing can be unpredictable.
+        """
+        self.finish()
 
 
 class ClearMLLogger:

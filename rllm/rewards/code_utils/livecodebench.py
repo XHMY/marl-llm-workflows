@@ -291,8 +291,6 @@ def grade_stdio(
     for idx, (gt_inp, gt_out) in enumerate(zip(all_inputs, all_outputs, strict=False)):
         signal.alarm(timeout)
         faulthandler.enable()
-
-        signal.alarm(timeout)
         with Capturing() as captured_output:
             try:
                 start = time.time()

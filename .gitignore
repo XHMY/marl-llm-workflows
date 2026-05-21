@@ -1,3 +1,17 @@
+*.jsonl
+.gradio
+.claude/
+rllm/data/datasets
+results/
+.codex
+coding_dataset_filtering
+
+trajectory_outputs/
+evaluation_trajectories
+.idea/
+checkpoints
+uv.lock
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -212,3 +226,9 @@ examples/deepresearch/HLE_OUTPUT_EVOLUTION.md
 
 # Until we have a good way to handle cuda-version specific pkgs, we ignore uv.lock
 uv.lock
+
+# Legacy issue: we will ignore the "verl" folder, which was installed by many as submodule before
+verl/
+
+# Validation-dip audit outputs (regeneratable via analysis/audit/detect_val_dips.py)
+reports/

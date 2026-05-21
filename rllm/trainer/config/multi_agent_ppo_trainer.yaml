@@ -1,0 +1,158 @@
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+defaults:
+  - ppo_trainer # Kept target default, change to agent_ppo_trainer if required
+  - _self_
+
+# Algorithm configuration (From Source A)
+algorithm:
+  adv_estimator: grpo
+
+# Actor, rollout, and model configuration
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 32
+    target_modules: all-linear
+    use_remove_padding: True # From Source A
+
+  actor:
+    # Optimization settings from Source A
+    ppo_mini_batch_size: 64
+    loss_agg_mode: seq-mean-token-mean
+    use_dynamic_bsz: True
+    ppo_max_token_len_per_gpu: 51200
+    ppo_micro_batch_size_per_gpu: 4
+    clip_ratio_high: 0.28
+    fsdp_config:
+      param_offload: False
+      optimizer_offload: False
+    ppo_epochs: 1
+    optim:
+      lr: 2e-5
+      lr_warmup_steps: 15
+      warmup_style: cosine
+
+  rollout:
+    # Merged settings
+    mode: async            # From Source B
+    name: vllm
+    n: 8
+    temperature: 0.7
+    tensor_model_parallel_size: 1
+    enforce_eager: False
+    gpu_memory_utilization: 0.85
+    max_num_seqs: 2048
+    max_num_batched_tokens: 16384
+    log_prob_micro_batch_size_per_gpu: 8
+    disable_log_stats: False
+    enable_prefix_caching: True
+    enable_chunked_prefill: True  # Better interleaving of prefill/decode
+
+    agent:
+      num_workers: 0       # From Source B
+
+    val_kwargs:
+      do_sample: True
+      n: 1
+      temperature: 0.7
+      # top_p: 0.8
+      # top_k: 20
+
+data:
+  # Depends on rllm.rejection_sample.multiplier existing below
+  train_batch_size: 64
+  val_batch_size: 2048
+  gen_batch_size: ${mul:${data.train_batch_size},${rllm.rejection_sample.multiplier}}
+
+rllm:
+  agent:
+    name: multi_agent_system
+    max_steps: 20
+    trajectory_timeout: null
+    overlong_filter: False
+    agent_args: {}
+    engine_args: {}
+
+  env:
+    name: custom
+    env_args: {}
+
+  # Multi-agent workflow specific overrides (Merged)
+  workflow:
+    use_workflow: True # Enabled (From Source A)
+    name: single_turn_workflow
+    use_final_outcome_reward: True
+
+    # Merged workflow arguments
+    workflow_args:
+      reward_function: null
+      # From Source B
+      agent_cls: null
+      agent_args: {}
+      env_cls: null
+      env_args: {}
+      timeout: 1e6
+      gamma: 0.0
+      reward_bonus_coeff: 0.0
+
+    n_parallel_tasks: 512
+    retry_limit: 3
+    code_executor_workers: 0  # 0 = use ThreadPoolExecutor (enables batch scheduler when max_concurrent_code_execs>0); >0 = use ProcessPoolExecutor with N workers
+    max_concurrent_code_execs: 0  # 0 = no limit. >0 with code_executor_workers=0 enables BatchTestScheduler (cross-problem pipeline). Set to CPU count for deepcoder.
+
+  disable_thinking: True
+  accumulate_reasoning: False
+  mask_truncated_samples: False
+
+  # Enable stepwise advantage for multi-agent trajectories (From Source A)
+  stepwise_advantage:
+    enable: True
+    mode: per_step
+    normalize_by_steps: False
+
+  # Compact filtering (Merged Source A overrides into B)
+  compact_filtering:
+    enable: False
+    mask_max_prompt_length_exceeded: True
+    mask_max_response_length_exceeded: True
+    mask_env_done: False
+    mask_max_turns_exceeded: False # Source A set this to False
+    mask_timeout: True
+    mask_unknown: False
+    mask_error: True
+
+  # Kept from Source B to support data.gen_batch_size interpolation
+  rejection_sample:
+    enable: False
+    multiplier: 1
+
+fireworks:
+  deployment_id: null
+  model_id_prefix: test-model
+  concurrency: 32
+
+trainer:
+  nnodes: 1
+  project_name: multi-agent-workflow # From Source A
+  experiment_name: multi-agent-training # From Source A
+  log_episodes: False
+  episode_log_dir: logs/${trainer.project_name}/${trainer.experiment_name}
+
+  # Multi-agent specific trainer settings (From Source A)
+  agent_names: ['default']
+  share_policy: False
+  lora_adapter_path: '/tmp/rllm_tmp_lora'
+  ori_single_policy_no_lora_mode: False
+  val_before_train: True
+  log_freq: 1
+  test_freq: 10
+  save_freq: 5
+  # total_epochs: 2
+  total_training_steps: 500
+
+ray_init:
+  include_dashboard: True
+  dashboard_host: 0.0.0.0

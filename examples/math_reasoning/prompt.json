@@ -1,0 +1,98 @@
+{
+  "multi_agent_math_prompts": {
+    "generator_initial": {
+      "template": "You are a math problem solver. Your task is to solve the given mathematical problem step by step. You must provide the final answer in \\boxed{{}} format\nProblem: {problem}",
+      "description": "Initial solution generation prompt for the generator agent (user message)",
+      "required_variables": ["problem"]
+    },
+    "evaluator_critique": {
+      "template": "You are a reviewing the solution above. Your task is to analyze it for correctness.\n\nImportant instructions: You must provide your verdict as \\boxed{Correct} or \\boxed{Incorrect}\n- If incorrect, add a brief comment explaining the main issue\n- Do not reveal the correct answer in your response",
+      "description": "Critique prompt for the evaluator agent to analyze solutions (user message)",
+      "required_variables": []
+    },
+    "generator_refinement": {
+      "template": "You are a math problem solver creating a new solution based on the teacher's feedback above. Your task is to solve the problem using a completely different approach.\n\nImportant instructions: You must provide the final answer in \\boxed{} format\n- Use a DIFFERENT method than your previous attempt\n- Address the issues identified in the teacher's feedback",
+      "description": "Refinement prompt for the generator agent to create new solutions with different approaches (user message)",
+      "required_variables": []
+    }
+  },
+  "evaluator_optimizer_prompts": {
+    "generator_initial": {
+      "template": "You are a math problem solver. Your task is to solve the given mathematical problem step by step. You must provide the final answer in \\boxed{{}} format.\n\nProblem: {problem}",
+      "description": "Initial solution generation prompt for the generator agent",
+      "required_variables": ["problem"]
+    },
+    "evaluator_critique": {
+      "template": "You are reviewing the solution above. Your task is to analyze it for correctness.\n\nImportant instructions:\n- Provide your verdict as \\boxed{Correct} or \\boxed{Incorrect}\n- If incorrect, briefly explain the main issue\n- Do not reveal the correct answer in your response",
+      "description": "Evaluation prompt for critiquing solutions",
+      "required_variables": []
+    },
+    "generator_refinement": {
+      "template": "You are a math problem solver creating a new solution based on the teacher's feedback above. Your task is to solve the problem using a completely different approach.\n\nImportant instructions:\n- You must provide the final answer in \\boxed{{}} format\n- Use a DIFFERENT method than your previous attempt\n- Address the issues identified in the teacher's feedback",
+      "description": "Refinement prompt for generator to create improved solutions",
+      "required_variables": []
+    }
+  },
+  "voting_prompts": {
+    "generator": {
+      "template": "You are a math problem solver. Your task is to solve the given mathematical problem step by step. You must provide the final answer in \\boxed{{}} format.\n\nProblem: {problem}",
+      "description": "Generation prompt for parallel math problem solving",
+      "required_variables": ["problem"]
+    },
+    "aggregator": {
+      "template": "You are an expert math reviewer. Your task is to review multiple solutions to the same problem and select the best one.\n\nProblem: {problem}\n\nSolutions to review:{solutions}\n\nInstructions:\n1. Analyze each solution for correctness and completeness\n2. Check the mathematical reasoning and final answer\n3. Select the solution number that is most likely correct\n4. Output your selection as \\boxed{{N}} where N is the solution number (1, 2, 3, etc.)\n\nYour selection:",
+      "description": "Aggregation prompt for selecting the best solution from multiple candidates",
+      "required_variables": ["problem", "solutions"]
+    }
+  },
+  "orchestrator_workers_prompts": {
+    "orchestrator_propose": {
+      "template": "You are a math problem-solving strategist. Your task is to propose at most {max_subtasks} DIFFERENT solution strategies for the following math problem. Each strategy should represent a distinct mathematical approach.\n\nProblem: {problem}\n\nInstructions:\n1. Think about different mathematical techniques that could solve this problem\n2. Propose at most {max_subtasks} distinct approaches (e.g., algebraic manipulation, coordinate geometry, trigonometric identities, combinatorial argument, etc.)\n3. Each strategy should be a brief description of the approach, NOT a solution\n4. Do NOT solve the problem — only describe the approaches\n5. Format your response as:\n   STRATEGY 1: [description of first approach]\n   STRATEGY 2: [description of second approach]\n   (and so on, up to {max_subtasks} strategies maximum)\n\nPropose strategies now:",
+      "description": "Strategy proposal prompt for orchestrator in propose_solve mode",
+      "required_variables": ["problem", "max_subtasks"]
+    },
+    "worker_full_solve": {
+      "template": "You are a math problem solver. Solve the following problem using the specified strategy.\n\nProblem: {problem}\n\nAssigned strategy: {strategy}\n\nInstructions:\n1. Follow the assigned strategy as your primary approach\n2. Solve the COMPLETE problem step by step\n3. Show your work clearly\n4. Provide the final answer in \\boxed{{}} format\n\nSolve the problem:",
+      "description": "Full-solve worker prompt for propose_solve mode",
+      "required_variables": ["problem", "strategy"]
+    },
+    "orchestrator_compare": {
+      "template": "You are a math problem-solving judge. Multiple solvers have each attempted to solve the same problem using different strategies. Compare their complete solutions and determine the correct answer.\n\nOriginal problem: {problem}\n\nComplete solutions:{solutions}\n\nInstructions:\n1. Read each complete solution carefully\n2. Check the mathematical reasoning in each solution\n3. Identify which solutions arrive at the same answer (agreement = higher confidence)\n4. If solutions disagree, determine which reasoning is correct\n5. Provide the final answer in \\boxed{{}} format\n\nYour judgment:",
+      "description": "Comparison/selection prompt for synthesizer in propose_solve mode",
+      "required_variables": ["problem", "solutions"]
+    }
+  },
+  "evaluator_optimizer_v2_prompts": {
+    "generator_initial": {
+      "template": "You are a math problem solver. Your task is to solve the given mathematical problem step by step. You must provide the final answer in \\boxed{{}} format.\n\nProblem: {problem}",
+      "description": "Initial solution generation prompt for the generator agent (V2)",
+      "required_variables": ["problem"]
+    },
+    "evaluator_critique": {
+      "template": "You are a reviewer checking a math solution for correctness.\n\nProblem: {problem}\n\nSolution to review:\n{solution}\n\nInstructions:\n- Check the reasoning for correctness\n- Provide your verdict as \\boxed{{Correct}} or \\boxed{{Incorrect}}\n- If incorrect, point out where the reasoning goes wrong and explain why it is flawed\n- Do NOT solve the problem yourself or suggest the correct approach\n- Do NOT reveal the correct answer",
+      "description": "Self-contained evaluation prompt embedding problem and solution. Evaluator pinpoints reasoning flaws without solving the problem (V2)",
+      "required_variables": ["problem", "solution"]
+    },
+    "generator_refinement": {
+      "template": "A reviewer identified an issue in your solution:\n\n{feedback}\n\nRevise your solution to fix the identified issue.\n\nInstructions:\n- Your previous reasoning is shown above in the conversation\n- Keep the parts that are correct — do not re-derive them, refer to them briefly (e.g. \"As shown in my previous reasoning, ...\")\n- Focus on correcting the flawed part and adjusting any reasoning that depends on it\n- Provide the final answer in \\boxed{{}} format",
+      "description": "Refinement prompt embedding reviewer feedback. Encourages incremental fixes referencing prior reasoning (V2)",
+      "required_variables": ["feedback"]
+    }
+  },
+  "metadata": {
+    "version": "1.4",
+    "created_date": "2025-08-15",
+    "updated_date": "2026-04-01",
+    "description": "Centralized prompt templates for multi-agent mathematical problem solving system",
+    "usage_notes": [
+      "All templates use Python string formatting with named placeholders",
+      "The \\boxed{{}} format requires double braces due to Python string formatting",
+      "These prompts are used across rollout generation and SFT dataset preparation",
+      "evaluator_optimizer_prompts: Used by EvaluatorOptimizerMathWorkflow (2-agent pattern, V1)",
+      "evaluator_optimizer_v2_prompts: Used by EvaluatorOptimizerV2MathWorkflow (2-agent pattern, V2 multi-turn)",
+      "multi_agent_math_prompts: Used by MultiAgentMathWorkflow (3-agent pattern)",
+      "voting_prompts: Used by VotingMathWorkflow (parallel generation + aggregation pattern)",
+      "orchestrator_workers_prompts: Used by OrchestratorWorkersMathWorkflow (strategy proposal pattern)"
+    ]
+  }
+}

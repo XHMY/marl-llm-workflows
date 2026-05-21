@@ -9,7 +9,7 @@ import socket
 
 import hydra
 import ray
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 from verl.trainer.ppo.reward import load_reward_manager
 from verl.utils.device import is_cuda_available
 
@@ -81,6 +81,13 @@ class TaskRunner:
         OmegaConf.register_new_resolver("mul", lambda x, y: int(x) * int(y))
         OmegaConf.resolve(config)
         pprint(OmegaConf.to_container(config))
+
+        with open_dict(config):
+            config.actor_rollout_ref.share_policy = config.trainer.get("share_policy", False)
+            config.actor_rollout_ref.agent_names = config.trainer.get("agent_names", ["default"])
+            config.actor_rollout_ref.rollout.max_loras = len(config.actor_rollout_ref.agent_names)
+            config.actor_rollout_ref.ori_single_policy_no_lora_mode = config.trainer.get("ori_single_policy_no_lora_mode", False)
+
 
         # Download the checkpoint from HDFS to the local machine.
         # `use_shm` determines whether to use shared memory, which could lead to faster model loading if turned on
@@ -175,6 +182,19 @@ class TaskRunner:
                             workflow_args[key].update(value)
                         else:
                             workflow_args[key] = value
+
+            # Extract initial_lora_weights and inject into actor config
+            initial_lora_weights = workflow_args.pop("initial_lora_weights", None)
+            if initial_lora_weights:
+                with open_dict(config):
+                    if config.actor_rollout_ref.get("share_policy"):
+                        # share_policy=True: load generator LoRA as the "default" adapter
+                        generator_path = initial_lora_weights.get("generator") or next(iter(initial_lora_weights.values()), None)
+                        if generator_path:
+                            config.actor_rollout_ref.model.lora_adapter_path = generator_path
+                    else:
+                        # share_policy=False: pass per-agent adapter paths to FSDP worker
+                        config.actor_rollout_ref.initial_lora_adapters = initial_lora_weights
 
             trainer = AgentWorkflowPPOTrainer(
                 config=config,

@@ -116,6 +116,8 @@ class FireworksAgentWorkflowPPOTrainer(AgentWorkflowPPOTrainer):
             config=self.config,
             n_parallel_tasks=self.config.rllm.workflow.n_parallel_tasks,
             retry_limit=self.config.rllm.workflow.retry_limit,
+            code_executor_workers=getattr(self.config.rllm.workflow, "code_executor_workers", 0),
+            max_concurrent_code_execs=getattr(self.config.rllm.workflow, "max_concurrent_code_execs", 0),
         )
 
         # init workflow workers

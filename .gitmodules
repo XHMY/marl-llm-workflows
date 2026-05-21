@@ -1,0 +1,5 @@
+[submodule "verl"]
+	path = verl
+	url = git@github.com:XHMY/verl.git
+	branch = rllm-0.2.1-local
+	ignore = untracked

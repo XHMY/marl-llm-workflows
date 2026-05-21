@@ -1,13 +1,15 @@
 import asyncio
 import logging
+import multiprocessing
 import uuid
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from tqdm import tqdm
+import json
 
 from rllm.agents.agent import Episode
 from rllm.engine.rollout import ModelOutput, RolloutEngine
@@ -21,8 +23,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _code_executor_init():
+    """Initializer for ProcessPoolExecutor workers used for code reward evaluation."""
+    from rllm.rewards.code_reward import set_direct_execution
+    set_direct_execution(True)
+
+
 class AgentWorkflowEngine:
-    def __init__(self, workflow_cls: type[Workflow], workflow_args: dict, rollout_engine: RolloutEngine, config=None, n_parallel_tasks: int = 128, retry_limit: int = 3, raise_on_error: bool = True, episode_logger=None, **kwargs):
+    def __init__(self, workflow_cls: type[Workflow], workflow_args: dict, rollout_engine: RolloutEngine, config=None, n_parallel_tasks: int = 128, retry_limit: int = 3, raise_on_error: bool = True, episode_logger=None, code_executor_workers: int = 0, max_concurrent_code_execs: int = 0, **kwargs):
         """Initialize the AgentWorkflowEngine.
 
         Args:
@@ -34,6 +42,8 @@ class AgentWorkflowEngine:
             retry_limit: Maximum number of retry attempts for failed tasks.
             raise_on_error: Whether to raise exceptions on permanent failures.
             episode_logger: Optional logger for saving episode data to files.
+            code_executor_workers: Number of ProcessPoolExecutor workers for code reward evaluation. 0 disables (falls back to ThreadPoolExecutor).
+            max_concurrent_code_execs: Max concurrent code executions (semaphore). 0 = no limit. Set to CPU count to avoid oversubscription.
             **kwargs: Additional keyword arguments.
         """
         self.workflow_cls = workflow_cls
@@ -49,6 +59,34 @@ class AgentWorkflowEngine:
         self.n_parallel_tasks = n_parallel_tasks
         self.executor = ThreadPoolExecutor(max_workers=self.n_parallel_tasks)
         self.workflow_queue = None
+
+        # Code reward ProcessPoolExecutor
+        if code_executor_workers > 0:
+            mp_ctx = multiprocessing.get_context("spawn")
+            self.code_reward_executor = ProcessPoolExecutor(
+                max_workers=code_executor_workers,
+                mp_context=mp_ctx,
+                initializer=_code_executor_init,
+            )
+        else:
+            self.code_reward_executor = None
+
+        # Limit concurrent code executions to avoid CPU oversubscription.
+        # Each code execution spawns ~N subprocesses (one per test case).
+        # Without limiting, 128 threads × 32 tests = 4096 processes on 32 cores.
+        if max_concurrent_code_execs > 0:
+            self.code_exec_semaphore = asyncio.Semaphore(max_concurrent_code_execs)
+        else:
+            self.code_exec_semaphore = None
+
+        # Cross-problem batch test scheduler: runs test #1 for all problems first,
+        # eliminates failures, then test #2 for survivors. Replaces per-problem
+        # parallel subprocess spawning for the evaluation path (no ProcessPoolExecutor).
+        if max_concurrent_code_execs > 0 and code_executor_workers == 0:
+            from rllm.rewards.batch_code_executor import BatchTestScheduler
+            self.batch_test_scheduler = BatchTestScheduler(pool_size=max_concurrent_code_execs)
+        else:
+            self.batch_test_scheduler = None
 
         # Episode logging support
         self.episode_logger = episode_logger
@@ -79,7 +117,7 @@ class AgentWorkflowEngine:
             return
         self.workflow_queue = asyncio.Queue(maxsize=self.n_parallel_tasks)
         for i in range(self.n_parallel_tasks):
-            workflow = self.workflow_cls(rollout_engine=self.rollout_engine, executor=self.executor, **self.workflow_args)
+            workflow = self.workflow_cls(rollout_engine=self.rollout_engine, executor=self.executor, code_reward_executor=self.code_reward_executor, code_exec_semaphore=self.code_exec_semaphore, batch_test_scheduler=self.batch_test_scheduler, **self.workflow_args)
             assert workflow.is_multithread_safe(), "Workflows must contain only thread-save environments"
             self.workflow_queue.put_nowait(workflow)
 
@@ -157,6 +195,16 @@ class AgentWorkflowEngine:
                 state["task"] = task
                 idx_counter += 1
             rollout_idx = state["total_rollouts"]
+
+            # Validate ground_truth field (warn but don't skip — reward function handles errors gracefully)
+            if "ground_truth" in task:
+                try:
+                    ground_truth = task["ground_truth"]
+                    if isinstance(ground_truth, str) and ground_truth:
+                        _ = json.loads(ground_truth)
+                except Exception as e:
+                    logger.warning(f"Task {task_id} has invalid 'ground_truth' field: {e}. Task will proceed but reward may fail.")
+
             futures.append(self.process_task_with_retry(task, task_id, rollout_idx, **kwargs))
             state["total_rollouts"] += 1
 
@@ -244,6 +292,8 @@ class AgentWorkflowEngine:
         termination_reasons = []
         metrics = []
         multi_modal_inputs_list = []
+        chat_completions_list = []
+        rollout_log_probs_list = []
 
         for i, episode in enumerate(episodes):
             total_steps = 0
@@ -275,6 +325,7 @@ class AgentWorkflowEngine:
                             logger.warning(f"Warning: Multi-step trajectory {trajectory_id} is not cumulative, but stepwise mode is not enabled. There could be a token mismatch during trajectory generation.")
 
                         chat_completions = trajectory.steps[-1].chat_completions
+                        chat_completions_list.append(chat_completions)
                         prompt, response, mask = self.rollout_engine.chat_parser.tokenize_and_mask_cumulative(chat_completions)
                         prompts.append(prompt)
                         responses.append(response)
@@ -283,6 +334,8 @@ class AgentWorkflowEngine:
 
                     elif isinstance(trajectory.steps[0].model_output, ModelOutput):
                         step = trajectory.steps[0]
+                        # For ModelOutput, use chat_completions if available, otherwise None
+                        chat_completions_list.append(step.chat_completions if hasattr(step, "chat_completions") and step.chat_completions else None)
 
                         prompt_ids = torch.tensor(step.model_output.prompt_ids, dtype=torch.long)
                         prompts.append(prompt_ids)
@@ -294,8 +347,12 @@ class AgentWorkflowEngine:
                         traj_mask.append(mask)
                         multi_modal_inputs_list.append(step.model_output.multi_modal_inputs or {})
 
+                        logprobs = torch.tensor(step.model_output.logprobs, dtype=torch.float32)
+                        rollout_log_probs_list.append(logprobs)
+
                     else:
                         chat_completions = trajectory.steps[0].chat_completions
+                        chat_completions_list.append(chat_completions)
                         prompt, response, mask = self.rollout_engine.chat_parser.tokenize_and_mask(chat_completions)
                         prompts.append(prompt)
                         responses.append(response)
@@ -309,6 +366,8 @@ class AgentWorkflowEngine:
                 else:
                     for step_idx, step in enumerate(trajectory.steps):
                         if isinstance(step.model_output, ModelOutput):
+                            # For ModelOutput, use chat_completions if available, otherwise None
+                            chat_completions_list.append(step.chat_completions if hasattr(step, "chat_completions") and step.chat_completions else None)
                             prompt_ids = torch.tensor(step.model_output.prompt_ids, dtype=torch.long)
                             prompts.append(prompt_ids)
 
@@ -319,8 +378,12 @@ class AgentWorkflowEngine:
                             traj_mask.append(mask)
                             multi_modal_inputs_list.append(step.model_output.multi_modal_inputs or {})
 
+                            logprobs = torch.tensor(step.model_output.logprobs, dtype=torch.float32)
+                            rollout_log_probs_list.append(logprobs)
+
                         else:
                             chat_completions = step.chat_completions
+                            chat_completions_list.append(chat_completions)
                             prompt, response, mask = self.rollout_engine.chat_parser.tokenize_and_mask(chat_completions)
                             prompts.append(prompt)
                             responses.append(response)
@@ -399,6 +462,16 @@ class AgentWorkflowEngine:
                 traj_rewards_batch[i, resp_len - 1] = traj_reward
                 step_rewards_batch[i, resp_len - 1] = step_reward
 
+        rollout_log_probs_batch = None
+        if rollout_log_probs_list:
+            rollout_log_probs_batch = torch.nn.utils.rnn.pad_sequence(
+                rollout_log_probs_list,
+                batch_first=True,
+                padding_value=0.0,
+            )
+            rollout_log_probs_batch = pad_sequence_to_length(rollout_log_probs_batch, max_response_length, 0.0, left_pad=False)
+            rollout_log_probs_batch = rollout_log_probs_batch[:, :max_response_length]
+
         # compact filtering
         cf = self.config.rllm.compact_filtering
         is_valid = [True] * len(episode_ids)
@@ -420,22 +493,28 @@ class AgentWorkflowEngine:
             "is_valid": np.array(is_valid),
             "is_last_step": np.array(is_last_step),
             "is_pad_step": np.array([False] * len(episode_ids)),
+            "chat_completions": np.array(chat_completions_list, dtype=object),  # chat completions for distillation
         }
 
         if any(mm_inputs is not None for mm_inputs in multi_modal_inputs_list):
             non_tensors["multi_modal_inputs"] = np.array(multi_modal_inputs_list, dtype=object)
 
+        tensors = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "prompts": prompts_batch,
+            "responses": response_batch,
+            "response_mask": traj_mask,
+            "traj_rewards": traj_rewards_batch,
+            "step_rewards": step_rewards_batch,
+        }
+
+        if rollout_log_probs_batch is not None:
+            tensors["rollout_log_probs"] = rollout_log_probs_batch
+
         return DataProto.from_dict(
-            tensors={
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-                "prompts": prompts_batch,
-                "responses": response_batch,
-                "response_mask": traj_mask,
-                "traj_rewards": traj_rewards_batch,
-                "step_rewards": step_rewards_batch,
-            },
+            tensors=tensors,
             non_tensors=non_tensors,
             meta_info={
                 "repeat_counts": repeat_counts,
@@ -479,6 +558,22 @@ class AgentWorkflowEngine:
 
     def shutdown(self):
         """Shutdown the workflow engine and cleanup resources."""
+        if hasattr(self, "batch_test_scheduler") and self.batch_test_scheduler is not None:
+            # Synchronous shutdown — the scheduler's async shutdown is safe to
+            # call from a sync context because it only cancels an asyncio task
+            # and shuts down thread executors.
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.batch_test_scheduler.shutdown())
+                else:
+                    loop.run_until_complete(self.batch_test_scheduler.shutdown())
+            except RuntimeError:
+                pass  # No event loop available; executors will be GC'd
+            self.batch_test_scheduler = None
+        if hasattr(self, "code_reward_executor") and self.code_reward_executor is not None:
+            self.code_reward_executor.shutdown(wait=True)
+            self.code_reward_executor = None
         if hasattr(self, "executor") and self.executor is not None:
             self.executor.shutdown(wait=True)
             self.executor = None

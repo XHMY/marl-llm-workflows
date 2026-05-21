@@ -1,7 +1,7 @@
 import asyncio
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, ThreadPoolExecutor
 from copy import deepcopy
 from enum import Enum
 from functools import partial
@@ -30,22 +30,30 @@ class TerminationEvent(Exception):
 
 
 class Workflow(ABC):
-    def __init__(self, rollout_engine: RolloutEngine, executor: ThreadPoolExecutor, timeout=1e6, gamma=0.0, reward_bonus_coeff=0.0, **kwargs):
+    def __init__(self, rollout_engine: RolloutEngine, executor: ThreadPoolExecutor = None, code_reward_executor: Executor = None, code_exec_semaphore: asyncio.Semaphore = None, batch_test_scheduler=None, timeout=1e6, gamma=0.0, reward_bonus_coeff=0.0, initial_lora_weights: dict | None = None, **kwargs):
         """Initialize the Workflow.
 
         Args:
             rollout_engine: The rollout engine to use.
-            executor: The executor to use.
+            executor: The executor to use (optional, only needed for run_in_executor).
+            code_reward_executor: Dedicated executor for code reward evaluation (optional).
+            code_exec_semaphore: Semaphore to limit concurrent code executions (optional).
+            batch_test_scheduler: Cross-problem batch test scheduler (optional). When set, run_in_code_executor delegates to the scheduler instead of per-problem execution.
             timeout: The timeout for the workflow.
             gamma: The discount factor for the workflow.
             reward_bonus_coeff: The reward bonus coefficient for the workflow.
+            initial_lora_weights: Per-agent LoRA adapter paths for warm-starting (e.g., {"generator": "/path/to/adapter"}).
             **kwargs: Additional keyword arguments.
         """
         self.rollout_engine = rollout_engine
         self.executor = executor
+        self.code_reward_executor = code_reward_executor
+        self.code_exec_semaphore = code_exec_semaphore
+        self.batch_test_scheduler = batch_test_scheduler
         self.timeout = int(timeout)
         self.gamma = gamma
         self.reward_bonus_coeff = reward_bonus_coeff
+        self.initial_lora_weights = initial_lora_weights
 
         self._completed_trajectories: list[Trajectory] = []
 
@@ -282,6 +290,44 @@ class Workflow(ABC):
             fn: The function to run.
             *args: The arguments to pass to the function.
             **kwargs: The keyword arguments to pass to the function.
+
+        Raises:
+            ValueError: If executor was not provided during initialization.
         """
+        if self.executor is None:
+            raise ValueError(
+                "Cannot use run_in_executor: no executor was provided during Workflow initialization. "
+                "Pass an executor to the Workflow constructor if you need to run functions in a thread pool."
+            )
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, partial(fn, *args, **kwargs))
+
+    async def run_in_code_executor(self, fn, *args, **kwargs):
+        """Run in code reward ProcessPoolExecutor; falls back to main executor.
+
+        When a batch_test_scheduler is available, delegates to it for cross-problem
+        test scheduling (runs test #1 for all problems first, eliminates failures,
+        then test #2 for survivors). Otherwise uses code_exec_semaphore (if provided)
+        to limit concurrent code executions.
+
+        Args:
+            fn: The function to run.
+            *args: The arguments to pass to the function.
+            **kwargs: The keyword arguments to pass to the function.
+
+        Raises:
+            ValueError: If no executor is available.
+        """
+        # Cross-problem batch scheduling: fn is code_reward_fn(task_info, action)
+        if self.batch_test_scheduler is not None and len(args) >= 2:
+            task_info, action = args[0], args[1]
+            return await self.batch_test_scheduler.submit(task_info, action)
+
+        executor = self.code_reward_executor or self.executor
+        if executor is None:
+            raise ValueError("No executor available for run_in_code_executor.")
+        loop = asyncio.get_event_loop()
+        if self.code_exec_semaphore is not None:
+            async with self.code_exec_semaphore:
+                return await loop.run_in_executor(executor, partial(fn, *args, **kwargs))
+        return await loop.run_in_executor(executor, partial(fn, *args, **kwargs))

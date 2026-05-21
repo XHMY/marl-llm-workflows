@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from rllm.rewards import RewardConfig, RewardType
@@ -437,3 +439,44 @@ def test_longest_subsequence_empty_list():
         task_info = {"problem": "", "problem_type": RewardType.CODE, "data_source": "kodcode", "ground_truth": tests}
         output = reward(task_info, model_response)
         assert output.is_correct
+
+    def test_reward_timeout_infinite_loop(self):
+        """Test that Python-level infinite loops are killed by signal.alarm timeout."""
+        model_response = '```python\ndef main():\n    while True:\n        pass\nif __name__ == "__main__":\n    main()\n```'
+        metadata = [{"input": "1\n", "output": "1\n", "testtype": "stdin"}]
+        reward = RewardCodeFn(RewardConfig())
+        task_info = {"problem": "", "problem_type": RewardType.CODE, "data_source": "livecodebench", "ground_truth": metadata}
+
+        start = time.time()
+        output = reward(task_info, model_response)
+        elapsed = time.time() - start
+
+        assert not output.is_correct
+        # signal.alarm(3) catches Python loops; batch_timeout ~25s is the upper bound
+        assert elapsed < 30, f"Timeout too slow: {elapsed:.1f}s"
+
+    def test_reward_timeout_c_level_cpu_burn(self):
+        """Test that C-level operations holding the GIL are killed by RLIMIT_CPU.
+
+        Catastrophic regex backtracking runs entirely in C and holds the GIL,
+        preventing signal.alarm from delivering TimeoutException. Only
+        RLIMIT_CPU (kernel-enforced CPU time limit) can kill such processes.
+        """
+        # 'a' * 30 + 'b' causes O(2^30) backtracking in C regex engine
+        model_response = (
+            '```python\nimport re\ndef main():\n'
+            "    re.match(r'(a+)+$', 'a' * 30 + 'b')\n"
+            '    print("1")\nif __name__ == "__main__":\n    main()\n```'
+        )
+        metadata = [{"input": "1\n", "output": "1\n", "testtype": "stdin"}]
+        reward = RewardCodeFn(RewardConfig())
+        task_info = {"problem": "", "problem_type": RewardType.CODE, "data_source": "livecodebench", "ground_truth": metadata}
+
+        start = time.time()
+        output = reward(task_info, model_response)
+        elapsed = time.time() - start
+
+        assert not output.is_correct
+        # RLIMIT_CPU hard limit = (3+1)*1+5+3 = 12s CPU time.
+        # Without RLIMIT_CPU this would hang for ~25s (batch_timeout).
+        assert elapsed < 20, f"RLIMIT_CPU not enforced, took {elapsed:.1f}s"

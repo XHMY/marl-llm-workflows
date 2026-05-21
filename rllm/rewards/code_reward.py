@@ -5,9 +5,13 @@ and assigns rewards based on their correctness on unit tests.
 
 import ast
 import json
+import logging
 import multiprocessing
+import os
 import re
-from multiprocessing import Manager
+import resource
+import select
+import time
 from typing import Any
 
 from rllm.rewards.code_utils.firejail_exec import code_exec_firejail as lc_code_exec
@@ -23,6 +27,63 @@ from rllm.rewards.code_utils.taco import run_test as taco_run_test
 from rllm.rewards.reward_types import RewardConfig, RewardOutput, RewardType
 from rllm.tools.code_tools.code_tool import CodeTool
 from rllm.tools.code_tools.together_tool import TogetherCodeTool
+
+logger = logging.getLogger(__name__)
+
+_USE_DIRECT_EXECUTION = False
+_DEFAULT_MAX_MEMORY_BYTES = 4 * 1024 ** 3
+_MAX_MEMORY_GB_ENV = "RLLM_CODE_REWARD_MAX_MEMORY_GB"
+_MAX_MEMORY_BYTES_ENV = "RLLM_CODE_REWARD_MAX_MEMORY_BYTES"
+
+
+def set_direct_execution(enabled: bool):
+    global _USE_DIRECT_EXECUTION
+    _USE_DIRECT_EXECUTION = enabled
+
+
+_DISABLE_SENTINELS = {"0", "none", "unlimited", "off", "false"}
+_UNSET = object()
+
+
+def _parse_memory_env(name: str, parser, scale: int, default_bytes: int):
+    """Parse a memory-cap env var. Returns int bytes, None (disabled), or _UNSET (not set / invalid)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return _UNSET
+    s = raw.strip().lower()
+    if s in _DISABLE_SENTINELS:
+        return None
+    try:
+        value = parser(s)
+    except ValueError:
+        logger.warning(
+            "Invalid %s=%r; falling back to %.1f GiB",
+            name, raw, default_bytes / 1024 ** 3,
+        )
+        return _UNSET
+    return int(value * scale) if value > 0 else None
+
+
+def _configured_max_memory_bytes(default_bytes: int = _DEFAULT_MAX_MEMORY_BYTES) -> int | None:
+    """Return the configured per-test subprocess RLIMIT_AS cap.
+
+    The default remains 4 GiB. Set RLLM_CODE_REWARD_MAX_MEMORY_GB=6 for hw4090,
+    or RLLM_CODE_REWARD_MAX_MEMORY_BYTES for an exact byte value. Values of 0,
+    "none", "unlimited", "off", or "false" disable the address-space cap.
+    """
+    for name, parser, scale in (
+        (_MAX_MEMORY_BYTES_ENV, int, 1),
+        (_MAX_MEMORY_GB_ENV, float, 1024 ** 3),
+    ):
+        result = _parse_memory_env(name, parser, scale, default_bytes)
+        if result is not _UNSET:
+            return result
+    return default_bytes
+
+
+# Resolve once at import; subprocesses inherit the cached value and avoid
+# repeated warning logs on a misconfigured env var.
+_RESOLVED_MAX_MEMORY_BYTES = _configured_max_memory_bytes()
 
 
 def extract_code_from_model(model_response: str):
@@ -85,15 +146,16 @@ def check_correctness(tests: list[dict[str, str]] | dict[str, list[str]], code: 
             - bool: True if all tests pass, False otherwise
             - dict: Detailed test results with test cases and pass/fail status
     """
-    manager = Manager()
-    test_results = manager.list()
 
-    def evaluate_code(tests, generation, debug, test_results, test_fn):
+    def evaluate_code(tests, generation, debug, conn, test_fn):
         """Helper function to run tests in separate process."""
         try:
-            test_results.append(test_fn(tests, test=generation, debug=debug, timeout=timeout_per_test))
+            result = test_fn(tests, test=generation, debug=debug, timeout=timeout_per_test)
+            conn.send(result)
         except Exception as e:
             print(f"Error in evaluate_code: {e}")
+        finally:
+            conn.close()
 
     original_tests = tests
     if isinstance(tests, list):
@@ -115,20 +177,34 @@ def check_correctness(tests: list[dict[str, str]] | dict[str, list[str]], code: 
             tests = selected_tests
         num_tests = len(tests["inputs"])
 
-    process = multiprocessing.Process(target=evaluate_code, args=(tests, code, False, test_results, test_fn))
+    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+    process = multiprocessing.Process(target=evaluate_code, args=(tests, code, False, child_conn, test_fn))
     process.start()
-    process.join()
+    child_conn.close()  # Close child end in parent so recv() can detect EOF
+
+    global_timeout = (timeout_per_test + 1) * num_tests + 5
+    process.join(timeout=global_timeout)
 
     if process.is_alive():
         process.kill()
-    test_results_list = list(test_results)
+        process.join(timeout=5)
+
+    # Read result from pipe
+    test_results_data = None
+    try:
+        if parent_conn.poll():
+            test_results_data = parent_conn.recv()
+    except (EOFError, OSError):
+        pass
+    finally:
+        parent_conn.close()
+        process.close()
 
     detailed_results: dict[str, Any] = {"all_passed": False, "test_results": [], "total_tests": num_tests, "passed_tests": 0}
 
-    if len(test_results_list) == 0:
+    if test_results_data is None:
         return False, detailed_results
 
-    test_results_data = test_results_list[0]
     passed_results = [r == True for r in test_results_data]
 
     # Create detailed test results
@@ -170,6 +246,88 @@ def postprocess_lcb_sample(sample):
     return sample
 
 
+def lcb_check_correctness_direct(sample, generation, timeout=3, debug=False, max_global_timeout=120):
+    """Run lcb_run_test in a subprocess with kill-based timeout.
+    Called from ProcessPoolExecutor workers for problem-level parallelism.
+    The subprocess isolates reliability_guard() state corruption and provides
+    an uncatchable SIGKILL timeout via p.kill()."""
+    assert len(sample) >= 1, "Sample must contain at least one test case"
+    processed_sample = postprocess_lcb_sample(sample)
+
+    in_outs = json.loads(processed_sample["input_output"])
+    all_inputs = in_outs["inputs"]
+    all_outputs = in_outs["outputs"]
+    num_tests = len(all_inputs)
+
+    # Cap global_timeout: incorrect code early-returns on first failure,
+    # and stuck code (C-level GIL hang) blocks on the first test anyway.
+    # Only correct-but-slow solutions need the full time, and those rarely
+    # take more than ~1s per test.
+    global_timeout = min((timeout + 1) * num_tests + 5, max_global_timeout)
+
+    # Spawn a subprocess to run lcb_run_test with kill-based timeout
+    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+    p = multiprocessing.Process(
+        target=_temp_run,
+        args=(processed_sample, generation, debug, child_conn, timeout),
+    )
+    p.start()
+    child_conn.close()
+
+    p.join(timeout=global_timeout)
+    if p.is_alive():
+        p.kill()
+        p.join(timeout=5)
+
+    # Read result from pipe
+    result, metadata = None, None
+    try:
+        if parent_conn.poll():
+            result, metadata = parent_conn.recv()
+    except (EOFError, OSError):
+        pass
+    finally:
+        parent_conn.close()
+        p.close()  # Release subprocess resources to prevent zombie/resource leaks
+
+    detailed_results = {"all_passed": False, "test_results": [], "total_tests": num_tests, "passed_tests": 0}
+
+    if result is None:
+        for j in range(num_tests):
+            detailed_results["test_results"].append({
+                "input": all_inputs[j],
+                "expected": all_outputs[j],
+                "passed": False,
+                "error": "global timeout or exception",
+            })
+        return False, detailed_results
+
+    for j in range(num_tests):
+        if j < len(result):
+            passed = result[j] == True
+            detail = {
+                "input": all_inputs[j],
+                "expected": all_outputs[j],
+                "passed": passed,
+                "error": metadata.get("error", None) if metadata else None,
+                "error_message": metadata.get("error_message", None) if metadata else None,
+                "output": metadata.get("output", None) if metadata else None,
+            }
+            detailed_results["test_results"].append(detail)
+        else:
+            detailed_results["test_results"].append({
+                "input": all_inputs[j],
+                "expected": all_outputs[j],
+                "passed": False,
+                "error": "skipped (prior test failed)",
+            })
+
+    detailed_results["passed_tests"] = sum(1 for t in detailed_results["test_results"] if t["passed"])
+    detailed_results["all_passed"] = all(t["passed"] for t in detailed_results["test_results"])
+
+    return detailed_results["all_passed"], detailed_results
+
+
 # https://huggingface.co/datasets/PrimeIntellect/verifiable-coding-problems
 def primeintellect_check_correctness(tests, code, use_tci=False):
     if isinstance(tests, str):
@@ -199,55 +357,190 @@ def primeintellect_check_correctness(tests, code, use_tci=False):
     return check_correctness(tests_formatted, code, taco_run_test)
 
 
-def _temp_run(sample, generation, debug, result, metadata_list, timeout):
-    res, metadata = lcb_run_test(sample, test=generation, debug=debug, timeout=timeout)
-    result.append(res)
-    metadata_list.append(metadata)
+def _temp_run(sample, generation, debug, conn, timeout, max_memory_bytes=None):
+    try:
+        # Close inherited FDs from the parent process (Ray IPC, CUDA, VLLM shared
+        # memory, pipes from other threads, etc.) to prevent cross-thread FD
+        # accumulation when forking from a multi-threaded process.
+        # Only keep stdin/stdout/stderr (0-2) and the pipe FD for sending results.
+        pipe_fd = conn.fileno()
+        os.closerange(3, pipe_fd)
+        os.closerange(pipe_fd + 1, 4096)
+
+        # Set memory limit to prevent LLM-generated code from consuming unbounded memory.
+        # RLIMIT_AS caps virtual address space; if exceeded, malloc/mmap fails with MemoryError.
+        if max_memory_bytes is None:
+            max_memory_bytes = _RESOLVED_MAX_MEMORY_BYTES
+        if max_memory_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_AS, (max_memory_bytes, max_memory_bytes))
+
+        # Set CPU time limit as kernel-level backup for signal.alarm.
+        # signal.alarm cannot interrupt C-level operations holding the GIL
+        # (e.g., "a"*10**9, pathological regex). RLIMIT_CPU is enforced by
+        # the kernel regardless of GIL state. Must be set before run_test()
+        # calls reliability_guard(), which disables the resource module.
+        try:
+            in_outs = json.loads(sample["input_output"])
+            num_tests_in_batch = len(in_outs.get("inputs", []))
+        except (json.JSONDecodeError, KeyError):
+            num_tests_in_batch = 1  # fallback: each subprocess runs one test
+        cpu_soft_limit = min((timeout + 1) * num_tests_in_batch + 5, 120)
+        cpu_hard_limit = cpu_soft_limit + 3
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_soft_limit, cpu_hard_limit))
+
+        res, metadata = lcb_run_test(sample, test=generation, debug=debug, timeout=timeout)
+        conn.send((res, metadata))
+    except Exception as e:
+        # MemoryError is a subclass of Exception, so this catches OOM from RLIMIT_AS.
+        # Send a failure result so the parent can distinguish error type from timeout.
+        try:
+            error_name = type(e).__name__
+            conn.send(([-4], {"error_code": -4, "error_message": f"{error_name}: {e}"}))
+        except Exception:
+            pass  # If even sending fails (e.g. deep OOM), parent gets None → counted as failure
+    finally:
+        conn.close()
+        # Hard-exit to skip atexit handlers (e.g. Ray's shutdown callback).
+        # Under RLIMIT_AS, atexit handlers fail with MemoryError when trying to import modules.
+        # The pipe is already closed, so results are safely delivered to the parent.
+        os._exit(0)
 
 
-def lcb_check_correctness_v2(sample, generation, timeout=6, debug=False):
-    """Check correctness of code generation with a global timeout.
-    The global timeout is to catch some extreme/rare cases not handled by the timeouts
-    inside `run_test`"""
+def lcb_check_correctness_v2(sample, generation, timeout=3, debug=False):
+    """Check correctness of code generation with per-test parallelism.
+
+    Each test case runs in its own subprocess so a slow or stuck test cannot
+    block other tests. The global deadline is bounded by a single test timeout
+    (not num_tests * timeout), dramatically reducing worst-case evaluation time
+    when tests run at different speeds.
+
+    We use Pipe (not joblib) because reliability_guard() inside run_test
+    disables os.fork/os.getcwd/etc., which breaks joblib/loky's pickling.
+    Pipe.send() uses low-level file descriptors unaffected by reliability_guard().
+    """
     assert len(sample) >= 1, "Sample must contain at least one test case"
-    sample = postprocess_lcb_sample(sample)
+    processed_sample = postprocess_lcb_sample(sample)
 
-    manager = multiprocessing.Manager()
-    result = manager.list()
-    metadata_list = manager.list()
+    in_outs = json.loads(processed_sample["input_output"])
+    all_inputs = in_outs["inputs"]
+    all_outputs = in_outs["outputs"]
+    fn_name = in_outs.get("fn_name", None)
+    num_tests = len(all_inputs)
 
-    p = multiprocessing.Process(
-        target=_temp_run,
-        args=(sample, generation, debug, result, metadata_list, timeout),
-    )
-    p.start()
-    p.join(timeout=(timeout + 1) * len(json.loads(sample["input_output"])["inputs"]) + 5)
+    pipes = []
+    processes = []
+    try:
+        for i in range(num_tests):
+            single_dict = {"inputs": [all_inputs[i]], "outputs": [all_outputs[i]]}
+            if fn_name is not None:
+                single_dict["fn_name"] = fn_name
+            single_sample = {"input_output": json.dumps(single_dict)}
 
-    detailed_results = {"all_passed": False, "test_results": [], "total_tests": 0, "passed_tests": 0}
+            parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+            try:
+                p = multiprocessing.Process(
+                    target=_temp_run,
+                    args=(single_sample, generation, debug, child_conn, timeout),
+                )
+                p.start()
+            except OSError:
+                parent_conn.close()
+                child_conn.close()
+                raise
+            child_conn.close()
+            pipes.append(parent_conn)
+            processes.append(p)
+    except OSError:
+        # Clean up already-started processes if we hit the process limit mid-loop
+        for p in processes:
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=5)
+            try:
+                p.close()
+            except ValueError:
+                pass
+        for conn in pipes:
+            conn.close()
+        raise
 
-    if p.is_alive():
-        p.kill()
-    if not result:
-        in_outs = json.loads(sample["input_output"])
-        # consider that all tests failed
-        result.extend([[-1 for i in range(len(in_outs["inputs"]))]])
-        detailed_results["total_tests"] = len(in_outs["inputs"])
-        detailed_results["test_results"] = [{"input": inp, "expected": out, "passed": False, "error": "global timeout"} for inp, out in zip(in_outs["inputs"], in_outs["outputs"], strict=False)]
-        if debug:
-            print("global timeout")
-        return False, detailed_results
+    # Poll results as they arrive. On first failure, kill all remaining
+    # processes — no point running more tests for incorrect code.
+    # Use poll() instead of select() because select() has a hard FD_SETSIZE=1024
+    # limit — pipe FDs in a Ray worker easily exceed 1024.
+    deadline = time.monotonic() + timeout + min(max(10, num_tests), 60)
+    test_results = [None] * num_tests
+    fd_to_index = {conn.fileno(): i for i, conn in enumerate(pipes)}
+    early_fail = False
 
-    if not result:
-        return False, detailed_results
+    poller = select.poll()
+    for fd in fd_to_index:
+        poller.register(fd, select.POLLIN)
 
-    # Create detailed test results
-    in_outs = json.loads(sample["input_output"])
-    detailed_results["total_tests"] = len(result[0])
-    detailed_results["test_results"] = [{"input": inp, "expected": out, "passed": res == True, "error": metadata_list[0].get("error", None), "error_message": metadata_list[0].get("error_message", None), "output": metadata_list[0].get("output", None)} for inp, out, res in zip(in_outs["inputs"], in_outs["outputs"], result[0], strict=False)]
-    detailed_results["passed_tests"] = sum(1 for r in result[0] if r == True)
-    detailed_results["all_passed"] = all(r == True for r in result[0])
+    try:
+        while fd_to_index and not early_fail:
+            remaining = max(0, deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            # poll() timeout is in milliseconds
+            events = poller.poll(remaining * 1000)
+            if not events:
+                break  # deadline hit with no new results
 
-    return all(x == True for x in result[0]), detailed_results
+            for fd, _event in events:
+                i = fd_to_index.pop(fd)
+                poller.unregister(fd)
+                try:
+                    result, metadata = pipes[i].recv()
+                except (EOFError, OSError):
+                    result, metadata = None, None
+
+                if result is None:
+                    test_results[i] = {
+                        "input": all_inputs[i], "expected": all_outputs[i],
+                        "passed": False, "error": "global timeout",
+                    }
+                    early_fail = True
+                else:
+                    passed = isinstance(result, list) and len(result) == 1 and result[0] is True
+                    test_results[i] = {
+                        "input": all_inputs[i], "expected": all_outputs[i],
+                        "passed": passed,
+                        "error": metadata.get("error", None) if metadata else None,
+                        "error_message": metadata.get("error_message", None) if metadata else None,
+                        "output": metadata.get("output", None) if metadata else None,
+                    }
+                    if not passed:
+                        early_fail = True
+    finally:
+        # Always kill remaining processes and close pipes, even on exceptions.
+        # Without this finally, an exception (e.g. from recv) would leak pipe
+        # FDs and orphan child processes — the root cause of the 17K FD leak.
+        for p in processes:
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=5)
+        for p in processes:
+            try:
+                p.close()
+            except ValueError:
+                pass
+        for i, parent_conn in enumerate(pipes):
+            if test_results[i] is None:
+                test_results[i] = {
+                    "input": all_inputs[i], "expected": all_outputs[i],
+                    "passed": False, "error": "killed (another test failed)",
+                }
+            parent_conn.close()
+
+    passed_tests = sum(1 for t in test_results if t["passed"])
+    detailed_results = {
+        "all_passed": passed_tests == num_tests,
+        "test_results": test_results,
+        "total_tests": num_tests,
+        "passed_tests": passed_tests,
+    }
+    return detailed_results["all_passed"], detailed_results
 
 
 def leetcode_check_correctness(tests: dict[str, str], code: str) -> tuple[bool, dict[str, Any]]:
@@ -422,7 +715,7 @@ class RewardCodeFn:
         dataset_name = task_info.get("data_source", "")
         tests = task_info.get("ground_truth", None)
 
-        if tests is None:
+        if tests is None or (isinstance(tests, str) and not tests.strip()):
             print("No tests found in task_info")
             return RewardOutput(reward=self.config.format_error_reward, is_correct=False, metadata={"error": "No tests found in task_info"})
 
@@ -439,27 +732,47 @@ class RewardCodeFn:
         is_correct = False
         test_details: dict[str, Any] = {}
 
-        if dataset_name in ["taco", "apps", "code_contests"]:
-            if self.config.use_together_code_interpreter:
-                is_correct, test_details = codetool_check_correctness(tests, model_code, codetool, is_taco_format=True)
+        try:
+            if dataset_name in ["taco", "apps", "code_contests"]:
+                if self.config.use_together_code_interpreter:
+                    is_correct, test_details = codetool_check_correctness(tests, model_code, codetool, is_taco_format=True)
+                else:
+                    tests = taco_to_lcb_format(tests)
+                    if _USE_DIRECT_EXECUTION:
+                        is_correct, test_details = lcb_check_correctness_direct(tests, model_code, debug=False)
+                    else:
+                        is_correct, test_details = lcb_check_correctness_v2(tests, model_code, debug=False)
+            elif dataset_name == "leetcode":
+                is_correct, test_details = leetcode_check_correctness(tests, model_code)
+            elif dataset_name in ["livecodebench", "codeforces", "primeintellect"]:
+                # Handle case where tests is a JSON string
+                if isinstance(tests, str):
+                    try:
+                        tests = json.loads(tests)
+                    except json.decoder.JSONDecodeError:
+                        print("test json invalid: ", tests)
+                        return RewardOutput(reward=self.config.format_error_reward, is_correct=False,
+                                            metadata={"error": "Tests in task_info is invalid json"})
+                if _USE_DIRECT_EXECUTION:
+                    is_correct, test_details = lcb_check_correctness_direct(tests, model_code, debug=False)
+                else:
+                    is_correct, test_details = lcb_check_correctness_v2(tests, model_code, debug=False)
+            elif dataset_name == "kodcode":
+                is_correct, test_details = kodcode_check_correctness(tests, model_code)
+            elif dataset_name == "humanevalplus":
+                is_correct, test_details = humanevalplus_check_correctness(tests, model_code)
             else:
-                tests = taco_to_lcb_format(tests)
-                is_correct, test_details = lcb_check_correctness_v2(tests, model_code, debug=False)
-                # test_fn = taco_run_test
-                # is_correct, test_details = check_correctness(tests, model_code, test_fn)
-        elif dataset_name == "leetcode":
-            is_correct, test_details = leetcode_check_correctness(tests, model_code)
-        elif dataset_name in ["livecodebench", "codeforces", "primeintellect"]:
-            # Handle case where tests is a JSON string
-            if isinstance(tests, str):
-                tests = json.loads(tests)
-            is_correct, test_details = lcb_check_correctness_v2(tests, model_code, debug=False)
-        elif dataset_name == "kodcode":
-            is_correct, test_details = kodcode_check_correctness(tests, model_code)
-        elif dataset_name == "humanevalplus":
-            is_correct, test_details = humanevalplus_check_correctness(tests, model_code)
-        else:
-            raise NotImplementedError(f"Dataset {dataset_name} not implemented")
+                raise NotImplementedError(f"Dataset {dataset_name} not implemented")
+        except NotImplementedError:
+            raise  # Programming error — don't silently swallow
+        except Exception as e:
+            # Safety net: catch any exception (including MemoryError) to prevent
+            # crashing the ProcessPoolExecutor worker, which would cause BrokenProcessPool.
+            logger.warning(
+                "RewardCodeFn: exception during correctness check: %s: %s", type(e).__name__, e
+            )
+            return RewardOutput(reward=self.config.incorrect_reward, is_correct=False,
+                                metadata={"error": f"{type(e).__name__}: {e}"})
 
         # total_time = time.time() - total_start_time
         # print(f"Total reward function execution time: {total_time:.2f} seconds")

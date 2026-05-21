@@ -1,10 +1,9 @@
-site_name: ""
-site_description: A library for training LLM agents with reinforcement learning
-repo_url: https://github.com/rllm-org/rllm
+site_name: "Multi-Agent RL Training of LLM Workflows"
+site_description: Multi-agent RL extensions on top of rllm v0.2.1 for the arxiv paper "When Does Multi-Agent RL Training Improve LLM Workflows?"
 docs_dir: docs
 theme:
   name: material
-  logo: assets/rllm_logo_white.png  # use a white or transparent version if possible
+  logo: assets/rllm_logo_white.png
   favicon: assets/rllm_logo.png
   palette:
     - scheme: default
@@ -69,81 +68,14 @@ markdown_extensions:
   - footnotes
 
 nav:
-  - Home: 
-      - Overview: index.md
-      - Getting Started:
-        - Installation Guide: getting-started/installation.md
-        - Quick Start: getting-started/quick-start.md
-      - Core Concepts:
-        - rLLM's Main Components: core-concepts/overview.md
-        - Agent and Environment: core-concepts/agent_env.md
-        - AgentExecutionEngine for Trajectory Rollout: core-concepts/execution-engine.md
-        - AgentWorkflowEngine for Episode Rollout: core-concepts/workflow-engine.md
-        - AgentTrainer for RL Training: core-concepts/training.md
-        - RL Algorithms for Agents: core-concepts/rl-algos.md
-        - SDK Overview: core-concepts/sdk.md
-      - Examples:
-        - Training a LangGraph Search Agent using the rLLM SDK: examples/sdk_langgraph_rag.md
-        - RL Training with Tinker: examples/tinker_rl.md
-        - VLM Training on Geo3k dataset: examples/vlm.md
-        - Joint Training of Solver-Judge Workflow: examples/solver_judge.md
-        - LoRA Training in rLLM (with verl): examples/gsm8k_lora.md
-        - Eval Protocol Integration: core-concepts/eval-protocol.md
-      - References:
-        - Examples: examples/index.md
-        - API Reference: api/index.md
-        - Contributing: contributing.md
-        - Blogs: https://rllm-project.com/blog.html
-  - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quick-start.md
-  - Core Concepts:
-      - rLLM's Main Components: core-concepts/overview.md
-      - Agent and Environment: core-concepts/agent_env.md
-      - AgentExecutionEngine for Trajectory Rollout: core-concepts/execution-engine.md
-      - AgentWorkflowEngine for Episode Rollout: core-concepts/workflow-engine.md
-      - AgentTrainer for RL Training: core-concepts/training.md
-      - RL Algorithms for Agents: core-concepts/rl-algos.md
-      - SDK Overview: core-concepts/sdk.md
-      - Eval Protocol Integration: core-concepts/eval-protocol.md
-  - Examples:
-      - Overview: examples/index.md
-      - Math Agent with rLLM SDK: examples/sdk_math.md
-      - Solver-Judge Workflow with rLLM SDK: examples/sdk_solver_judge.md
-      - LangGraph RAG Agent with rLLM SDK: examples/sdk_langgraph_rag.md
-      - RL Training with Tinker: examples/tinker_rl.md
-      - LoRA Training in rLLM (with verl): examples/gsm8k_lora.md
-      - Solver-Judge Workflow: examples/solver_judge.md
-      - Vision-Language Models (VLM): examples/vlm.md
-      - DeepScaleR: examples/deepscaler.md
-      - DeepCoder: examples/deepcoder.md
-      - DeepSWE: examples/swe.md
-      - Search Agent: examples/search.md
-      - FrozenLake Agent: examples/frozenlake.md
-      - Math SFT: examples/sft.md
-  - API Reference:
-      - Overview: api/index.md
-      - Agents:
-          - Agent Base: api/agents/agent.md
-          - Agent Utils: api/agents/utils.md
-      - Environments:
-          - Environment Base: api/environments/base.md
-          - Environment Utils: api/environments/env_utils.md
-      - Workflow:
-          - Workflow Base: api/workflows/workflow.md
-      - Engine:
-          - Agent Execution Engine: api/engine/agent_execution_engine.md
-          - Agent Workflow Engine: api/engine/agent_workflow_engine.md
-      - Trainer:
-          - Agent Trainer: api/trainer/agent_trainer.md
-          - Ray Runtime Environment: api/trainer/ray_runtime_env.md
-      - Tools:
-          - Tool Base Classes: api/tools/tool_base.md
-          - Tool Registry: api/tools/registry.md
-          - Web Tools: api/tools/web_tools.md
-          - Code Tools: api/tools/code_tools.md
-      - Parser:
-          - Tool Parsers: api/parser/tool_parser.md
-          - Chat Parsers: api/parser/chat_parser.md
-  - Contributing: contributing.md
-  - Blogs: https://rllm-project.com/blog.html
+  - Overview: multi-agent/index.md
+  - Workflows: multi-agent/workflows.md
+  - Policy Sharing (IP vs SP): multi-agent/policy-sharing.md
+  - Multi-Agent LoRA: multi-agent/lora-implementation.md
+  - Training: multi-agent/training.md
+  - Trajectories and Evaluation: multi-agent/trajectories-and-eval.md
+  - Monitoring: multi-agent/monitoring.md
+  - Running Experiments: multi-agent/running-experiments.md
+  - Interventions:
+      - I1 — Per-Role KL Anchor: multi-agent/interventions/i1-per-role-kl-anchor.md
+      - I6 — Coherence Regularizer: multi-agent/interventions/i6-coherence-regularizer.md

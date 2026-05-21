@@ -33,6 +33,9 @@ WORKFLOW_CLASSES = {
     "multi_turn_workflow": safe_import("rllm.workflows.multi_turn_workflow", "MultiTurnWorkflow"),
     "simple_workflow": safe_import("rllm.workflows.simple_workflow", "SimpleWorkflow"),
     "cumulative_workflow": safe_import("rllm.workflows.cumulative_workflow", "CumulativeWorkflow"),
+    # Environment-based workflows (generic, work with any agent/env)
+    "env_single_agent_workflow": safe_import("rllm.workflows.env_single_agent_workflow", "EnvSingleAgentWorkflow"),
+    "env_evaluator_optimizer_workflow": safe_import("rllm.workflows.env_evaluator_optimizer_workflow", "EnvEvaluatorOptimizerWorkflow"),
 }
 
 # Filter out None values for unavailable imports

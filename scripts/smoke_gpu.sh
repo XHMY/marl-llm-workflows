@@ -6,8 +6,8 @@
 #   SMOKE_VARIANTS=ip bash scripts/smoke_gpu.sh
 #   SMOKE_EVAL=1 bash scripts/smoke_gpu.sh   # also evaluate the IP checkpoints on 8 problems
 #
-# Checks: exit code 0; per-role metrics in the console log (IP: the generator takes 3 optimizer
-# steps per training step and the aggregator 1); one adapter directory per role (IP) or one shared
+# Checks: exit code 0; per-role metrics in the console log under IP (the generator takes 3 optimizer
+# steps per training step and the aggregator 1) and global actor metrics under SP; one adapter directory per role (IP) or one shared
 # adapter (SP) at steps 1 and 2; training_metadata.json and latest_checkpointed_iteration.txt at 2;
 # a second launch of the same command prints RUN_COMPLETE and exits 0.
 set -euo pipefail
@@ -54,13 +54,23 @@ run_variant() {
 
     eval "${cmd}" 2>&1 | tee "${log}" || fail "${policy}" "training exited non-zero (log: ${log})"
 
-    grep -q "actor/generator/pg_loss" "${log}" || fail "${policy}" "no actor/generator/pg_loss in the console log"
-    grep -q "actor/aggregator/pg_loss" "${log}" || fail "${policy}" "no actor/aggregator/pg_loss in the console log"
     if [[ "${policy}" == ip ]]; then
+        # One adapter per role: the batch is split by role, so the actor metrics carry the role name.
+        grep -q "actor/generator/pg_loss" "${log}" || fail ip "no actor/generator/pg_loss in the console log"
+        grep -q "actor/aggregator/pg_loss" "${log}" || fail ip "no actor/aggregator/pg_loss in the console log"
         grep -Eq "actor/generator/optim_steps_this_call:3(\.0)?( |$)" "${log}" \
             || fail ip "generator did not take 3 optimizer steps per training step"
         grep -Eq "actor/aggregator/optim_steps_this_call:1(\.0)?( |$)" "${log}" \
             || fail ip "aggregator did not take 1 optimizer step per training step"
+    else
+        # One shared adapter: a single update over the whole batch, so the metrics are global.
+        grep -q "actor/pg_loss" "${log}" || fail sp "no actor/pg_loss in the console log"
+        grep -q "actor/optim_steps_this_call" "${log}" || fail sp "no actor/optim_steps_this_call in the console log"
+        ! grep -q "actor/generator/pg_loss" "${log}" || fail sp "unexpected per-role actor metrics under a shared policy"
+    fi
+    grep -Eq "actor/(generator/)?pg_loss:-?[0-9.e-]+" "${log}" || fail "${policy}" "pg_loss missing"
+    if ! grep -Eq "batch/success:0\.[0-9]+" "${log}"; then
+        echo "SMOKE WARN (${policy}): batch/success never strictly between 0 and 1; advantages were all zero" >&2
     fi
 
     for step in 1 2; do

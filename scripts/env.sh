@@ -16,3 +16,8 @@ MARL_REPO_ROOT="$(cd "$(dirname "${_marl_env_file}")/.." && pwd)"
 export MARL_REPO_ROOT
 export PYTHONPATH="${MARL_REPO_ROOT}:${MARL_REPO_ROOT}/third_party/rllm:${MARL_REPO_ROOT}/third_party/verl${PYTHONPATH:+:${PYTHONPATH}}"
 unset _marl_env_file
+
+# vLLM settings every training and evaluation process needs (the SLURM templates set the same).
+export VLLM_USE_V1="${VLLM_USE_V1:-1}"
+export VLLM_ALLOW_RUNTIME_LORA_UPDATING="${VLLM_ALLOW_RUNTIME_LORA_UPDATING:-True}"
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN="${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-1}"

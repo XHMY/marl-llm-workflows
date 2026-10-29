@@ -53,13 +53,13 @@
     "smoke_math": {
       "test": {
         "rows": 8,
-        "sha256_ordered": "2f772c845e4a6f26279e2f3858c3482ad654cf24e29c5412278d140220c72a81",
-        "sha256_sorted": "5d01ca01771de49e8a707a831ae24349c3eea7194d7effb2ab4d5c0824386951"
+        "sha256_ordered": "215e61ce22dab47b31a5a60bb42bf5de878e9ac7820c180bfd0a593395e3d659",
+        "sha256_sorted": "336f999e791c1e7aa591dd0d831965fc45b6221bf75deca74ee3a27cb0c871de"
       },
       "train": {
         "rows": 32,
-        "sha256_ordered": "476a8ac4736517d1cf197326c3a8582fca00a7ddf95168adeb351ae1b87ed23c",
-        "sha256_sorted": "9059fdef0624dcbff69832b4e7fd85e70f0100b243fdf834b41d997bb47a9e3e"
+        "sha256_ordered": "5b7c6616f99c12b52466004dcb1eae2461349e0d71af7c37f2121eb54e6ba257",
+        "sha256_sorted": "dc715c9150156ea30c8451bfb64de41b52ef755e87354bd75e61e0e6e9acdad8"
       }
     }
   },
@@ -74,7 +74,7 @@
     },
     "fixtures/smoke_math.jsonl": {
       "rows": 40,
-      "sha256": "a80cbd42d37defcb319d7f2696b5e36de31762709f43b5d400e60e2de0e8f22b"
+      "sha256": "9e1931a0ec6d51c273587508ab5697560b1d3f75a9e65500f02c0f92f3c5ecce"
     }
   }
 }

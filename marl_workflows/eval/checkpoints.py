@@ -41,8 +41,8 @@ __all__ = [
     "parse_experiment_name",
 ]
 
-# TODO(contracts): model size -> HF base model id (fork dashboard/task_configs.py MODEL_MAP);
-# not in contracts.py, which has no model-id table.
+# Model size token of an experiment name -> HF base model id. Evaluation is the only consumer,
+# so the table lives here rather than in contracts.
 MODEL_MAP: dict[str, str] = {
     "0.6b": "Qwen/Qwen3-0.6B",
     "1.7b": "Qwen/Qwen3-1.7B",

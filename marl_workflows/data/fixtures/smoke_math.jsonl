@@ -1,40 +1,40 @@
-{"question": "What is $39 + 9$?", "final_answer": "48", "ground_truth": "48", "data_source": "math"}
-{"question": "Compute $19 \\times 12$.", "final_answer": "228", "ground_truth": "228", "data_source": "math"}
-{"question": "What is $243 \\div 9$?", "final_answer": "27", "ground_truth": "27", "data_source": "math"}
-{"question": "Find $x$ if $x + 23 = 27$.", "final_answer": "4", "ground_truth": "4", "data_source": "math"}
-{"question": "What is the remainder when $275$ is divided by $8$?", "final_answer": "3", "ground_truth": "3", "data_source": "math"}
-{"question": "A rectangle has side lengths $10$ and $6$. What is its area?", "final_answer": "60", "ground_truth": "60", "data_source": "math"}
-{"question": "What is the sum of the first $21$ positive integers?", "final_answer": "231", "ground_truth": "231", "data_source": "math"}
-{"question": "Compute $32^2 - 12^2$.", "final_answer": "880", "ground_truth": "880", "data_source": "math"}
-{"question": "What is $19 + 10$?", "final_answer": "29", "ground_truth": "29", "data_source": "math"}
-{"question": "Compute $13 \\times 6$.", "final_answer": "78", "ground_truth": "78", "data_source": "math"}
-{"question": "What is $308 \\div 11$?", "final_answer": "28", "ground_truth": "28", "data_source": "math"}
-{"question": "Find $x$ if $x + 11 = 16$.", "final_answer": "5", "ground_truth": "5", "data_source": "math"}
-{"question": "What is the remainder when $73$ is divided by $7$?", "final_answer": "3", "ground_truth": "3", "data_source": "math"}
-{"question": "A rectangle has side lengths $22$ and $5$. What is its area?", "final_answer": "110", "ground_truth": "110", "data_source": "math"}
-{"question": "What is the sum of the first $33$ positive integers?", "final_answer": "561", "ground_truth": "561", "data_source": "math"}
-{"question": "Compute $17^2 - 5^2$.", "final_answer": "264", "ground_truth": "264", "data_source": "math"}
-{"question": "What is $38 + 10$?", "final_answer": "48", "ground_truth": "48", "data_source": "math"}
-{"question": "Compute $12 \\times 3$.", "final_answer": "36", "ground_truth": "36", "data_source": "math"}
-{"question": "What is $96 \\div 6$?", "final_answer": "16", "ground_truth": "16", "data_source": "math"}
-{"question": "Find $x$ if $x + 11 = 16$.", "final_answer": "5", "ground_truth": "5", "data_source": "math"}
-{"question": "What is the remainder when $219$ is divided by $6$?", "final_answer": "3", "ground_truth": "3", "data_source": "math"}
-{"question": "A rectangle has side lengths $31$ and $4$. What is its area?", "final_answer": "124", "ground_truth": "124", "data_source": "math"}
-{"question": "What is the sum of the first $13$ positive integers?", "final_answer": "91", "ground_truth": "91", "data_source": "math"}
-{"question": "Compute $32^2 - 11^2$.", "final_answer": "903", "ground_truth": "903", "data_source": "math"}
-{"question": "What is $33 + 11$?", "final_answer": "44", "ground_truth": "44", "data_source": "math"}
-{"question": "Compute $35 \\times 8$.", "final_answer": "280", "ground_truth": "280", "data_source": "math"}
-{"question": "What is $64 \\div 2$?", "final_answer": "32", "ground_truth": "32", "data_source": "math"}
-{"question": "Find $x$ if $x + 36 = 47$.", "final_answer": "11", "ground_truth": "11", "data_source": "math"}
-{"question": "What is the remainder when $73$ is divided by $10$?", "final_answer": "3", "ground_truth": "3", "data_source": "math"}
-{"question": "A rectangle has side lengths $23$ and $12$. What is its area?", "final_answer": "276", "ground_truth": "276", "data_source": "math"}
-{"question": "What is the sum of the first $32$ positive integers?", "final_answer": "528", "ground_truth": "528", "data_source": "math"}
-{"question": "Compute $26^2 - 4^2$.", "final_answer": "660", "ground_truth": "660", "data_source": "math"}
-{"question": "What is $33 + 9$?", "final_answer": "42", "ground_truth": "42", "data_source": "math"}
-{"question": "Compute $24 \\times 4$.", "final_answer": "96", "ground_truth": "96", "data_source": "math"}
-{"question": "What is $280 \\div 10$?", "final_answer": "28", "ground_truth": "28", "data_source": "math"}
-{"question": "Find $x$ if $x + 10 = 17$.", "final_answer": "7", "ground_truth": "7", "data_source": "math"}
-{"question": "What is the remainder when $153$ is divided by $6$?", "final_answer": "3", "ground_truth": "3", "data_source": "math"}
-{"question": "A rectangle has side lengths $33$ and $9$. What is its area?", "final_answer": "297", "ground_truth": "297", "data_source": "math"}
-{"question": "What is the sum of the first $32$ positive integers?", "final_answer": "528", "ground_truth": "528", "data_source": "math"}
-{"question": "Compute $32^2 - 6^2$.", "final_answer": "988", "ground_truth": "988", "data_source": "math"}
+{"question": "What is the sum of all positive integers less than $74$ that are divisible by $7$?", "final_answer": "385", "ground_truth": "385", "data_source": "math"}
+{"question": "What is the sum of all positive integers less than $68$ that are divisible by $7$?", "final_answer": "315", "ground_truth": "315", "data_source": "math"}
+{"question": "What is $75 + 86$?", "final_answer": "161", "ground_truth": "161", "data_source": "math"}
+{"question": "How many trailing zeros does $100!$ have?", "final_answer": "24", "ground_truth": "24", "data_source": "math"}
+{"question": "What is $44 + 99$?", "final_answer": "143", "ground_truth": "143", "data_source": "math"}
+{"question": "What is $41 + 20$?", "final_answer": "61", "ground_truth": "61", "data_source": "math"}
+{"question": "What is $68 \\div 4$?", "final_answer": "17", "ground_truth": "17", "data_source": "math"}
+{"question": "What is the sum of all positive integers less than $73$ that are divisible by $6$?", "final_answer": "468", "ground_truth": "468", "data_source": "math"}
+{"question": "Compute $27 \\times 5$.", "final_answer": "135", "ground_truth": "135", "data_source": "math"}
+{"question": "Compute $748 \\times 751$.", "final_answer": "561748", "ground_truth": "561748", "data_source": "math"}
+{"question": "What is $68 - 21$?", "final_answer": "47", "ground_truth": "47", "data_source": "math"}
+{"question": "How many trailing zeros does $75!$ have?", "final_answer": "18", "ground_truth": "18", "data_source": "math"}
+{"question": "What is $119 \\div 7$?", "final_answer": "17", "ground_truth": "17", "data_source": "math"}
+{"question": "What is $88 - 38$?", "final_answer": "50", "ground_truth": "50", "data_source": "math"}
+{"question": "What is $75 - 37$?", "final_answer": "38", "ground_truth": "38", "data_source": "math"}
+{"question": "What is the sum of all positive integers less than $70$ that are divisible by $7$?", "final_answer": "315", "ground_truth": "315", "data_source": "math"}
+{"question": "What is the remainder when $5^{18}$ is divided by $13$?", "final_answer": "12", "ground_truth": "12", "data_source": "math"}
+{"question": "What is $75 - 22$?", "final_answer": "53", "ground_truth": "53", "data_source": "math"}
+{"question": "Compute $472 \\times 950$.", "final_answer": "448400", "ground_truth": "448400", "data_source": "math"}
+{"question": "Compute $15 \\times 11$.", "final_answer": "165", "ground_truth": "165", "data_source": "math"}
+{"question": "What is $68 - 36$?", "final_answer": "32", "ground_truth": "32", "data_source": "math"}
+{"question": "What is $72 + 86$?", "final_answer": "158", "ground_truth": "158", "data_source": "math"}
+{"question": "Compute $27 \\times 11$.", "final_answer": "297", "ground_truth": "297", "data_source": "math"}
+{"question": "How many trailing zeros does $30!$ have?", "final_answer": "7", "ground_truth": "7", "data_source": "math"}
+{"question": "How many trailing zeros does $30!$ have?", "final_answer": "7", "ground_truth": "7", "data_source": "math"}
+{"question": "What is the remainder when $5^{15}$ is divided by $17$?", "final_answer": "7", "ground_truth": "7", "data_source": "math"}
+{"question": "What is $225 \\div 9$?", "final_answer": "25", "ground_truth": "25", "data_source": "math"}
+{"question": "What is the remainder when $6^{17}$ is divided by $17$?", "final_answer": "6", "ground_truth": "6", "data_source": "math"}
+{"question": "What is the remainder when $4^{11}$ is divided by $17$?", "final_answer": "13", "ground_truth": "13", "data_source": "math"}
+{"question": "What is the sum of all positive integers less than $83$ that are divisible by $4$?", "final_answer": "840", "ground_truth": "840", "data_source": "math"}
+{"question": "What is the remainder when $9^{12}$ is divided by $13$?", "final_answer": "1", "ground_truth": "1", "data_source": "math"}
+{"question": "What is $64 - 32$?", "final_answer": "32", "ground_truth": "32", "data_source": "math"}
+{"question": "What is $320 \\div 8$?", "final_answer": "40", "ground_truth": "40", "data_source": "math"}
+{"question": "What is $22 + 33$?", "final_answer": "55", "ground_truth": "55", "data_source": "math"}
+{"question": "What is $120 \\div 5$?", "final_answer": "24", "ground_truth": "24", "data_source": "math"}
+{"question": "Compute $956 \\times 614$.", "final_answer": "586984", "ground_truth": "586984", "data_source": "math"}
+{"question": "Compute $678 \\times 850$.", "final_answer": "576300", "ground_truth": "576300", "data_source": "math"}
+{"question": "How many trailing zeros does $125!$ have?", "final_answer": "31", "ground_truth": "31", "data_source": "math"}
+{"question": "What is $94 - 37$?", "final_answer": "57", "ground_truth": "57", "data_source": "math"}
+{"question": "Compute $636 \\times 429$.", "final_answer": "272844", "ground_truth": "272844", "data_source": "math"}

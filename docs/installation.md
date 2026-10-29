@@ -76,6 +76,6 @@ bash scripts/smoke_gpu.sh        # end-to-end: two training steps of Voting with
 ```
 
 The smoke test trains Voting with one adapter per role and then with a shared adapter, two steps
-each, and checks the per-role metrics, the saved adapters, the checkpoint metadata and that a
+each, and checks the actor metrics (per role under IP, global under SP), the saved adapters, the checkpoint metadata and that a
 second launch of a finished run exits immediately. Outputs go to `outputs/smoke/`; set
 `SMOKE_EVAL=1` to also run the evaluator on the IP checkpoints.

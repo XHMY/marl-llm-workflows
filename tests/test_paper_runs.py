@@ -202,6 +202,117 @@ def test_code_runs_allocate_a_cpu_per_executor_worker(runs: dict[str, dict[str, 
 
 
 # --------------------------------------------------------------------------------------
+# Derived runs: --paper-run with naming and logging flags (no fork needed)
+# --------------------------------------------------------------------------------------
+
+
+def _paper_run_overrides(capsys: pytest.CaptureFixture[str], *args: str) -> list[str]:
+    rc = launch.cli(["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", *args])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.err
+    argv = shlex.split(captured.out.strip())
+    assert argv[:3] == ["python", "-m", launch.ENTRY_MODULE]
+    return argv[3:]
+
+
+def _without(overrides: list[str], *keys: str) -> list[str]:
+    return [o for o in overrides if launch.parse_override(o)[1] not in keys]
+
+
+def test_paper_run_name_suffix_and_override(capsys: pytest.CaptureFixture[str]) -> None:
+    reference = _paper_run_overrides(capsys)
+    derived = _paper_run_overrides(
+        capsys, "--name-suffix", "pooled_groups", "+rllm.workflow.separate_vote_groups=false"
+    )
+    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math" in reference
+    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math-pooled_groups" in derived
+    assert "+rllm.workflow.separate_vote_groups=false" in derived
+    assert f"trainer.project_name={launch.PAPER_PROJECT}" in derived
+    # Every other key of the paper run is unchanged and in the same order.
+    assert _without(derived, "trainer.experiment_name", "rllm.workflow.separate_vote_groups") == _without(
+        reference, "trainer.experiment_name"
+    )
+
+
+def test_paper_run_experiment_name_replaces_the_name(capsys: pytest.CaptureFixture[str]) -> None:
+    reference = _paper_run_overrides(capsys)
+    derived = _paper_run_overrides(capsys, "--experiment-name", "my-run", "--name-suffix", "ignored", "--project", "p2")
+    assert "trainer.experiment_name=my-run" in derived
+    assert "trainer.project_name=p2" in derived
+    assert _without(derived, "trainer.experiment_name", "trainer.project_name") == _without(
+        reference, "trainer.experiment_name", "trainer.project_name"
+    )
+
+
+def test_paper_run_processed_logprobs(capsys: pytest.CaptureFixture[str]) -> None:
+    reference = _paper_run_overrides(capsys)
+    derived = _paper_run_overrides(capsys, "--processed-logprobs", "--name-suffix", "plp")
+    assert launch._LOGPROBS in derived and launch._LOGPROBS not in reference
+    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math-plp" in derived
+    assert _without(derived, "trainer.experiment_name", launch.parse_override(launch._LOGPROBS)[1]) == _without(
+        reference, "trainer.experiment_name"
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["+rllm.workflow.separate_vote_groups=false"],
+        ["--processed-logprobs"],
+        ["--experiment-name", "voting-qwen3_1.7b-multi_lora-math", "trainer.save_freq=5"],
+        [
+            "--project",
+            "p2",
+            "trainer.default_local_dir=checkpoints/rllm-workflow-MARL-v2/voting-qwen3_1.7b-multi_lora-math",
+            "a.b=1",
+        ],
+    ],
+)
+def test_derived_paper_run_refuses_the_reference_name(capsys: pytest.CaptureFixture[str], args: list[str]) -> None:
+    rc = launch.cli(["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", *args])
+    assert rc == 2
+    assert "--allow-same-name" in capsys.readouterr().err
+    rc = launch.cli(
+        ["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", "--allow-same-name", *args]
+    )
+    assert rc == 0
+
+
+def test_plain_paper_run_and_other_project_are_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    assert launch.cli(["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print"]) == 0
+    rc = launch.cli(
+        ["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", "--project", "p2", "a.b=1"]
+    )
+    assert rc == 0
+
+
+def test_paper_run_resume_from(capsys: pytest.CaptureFixture[str]) -> None:
+    ov = _paper_run_overrides(capsys, "--resume-from", "/ckpt/global_step_100")
+    assert "trainer.resume_mode=resume_path" in ov
+    assert "trainer.resume_from_path=/ckpt/global_step_100" in ov
+    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math" in ov  # resuming the same run is allowed
+
+
+def test_paper_run_init_adapter(capsys: pytest.CaptureFixture[str]) -> None:
+    ov = _paper_run_overrides(capsys, "--init-adapter", "generator=/a/lora_adapter_generator", "--name-suffix", "init")
+    assert "+rllm.workflow.initial_lora_weights.generator=/a/lora_adapter_generator" in ov
+    rc = launch.cli(
+        ["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", "--init-adapter", "generator=/a"]
+    )
+    assert rc == 2  # a derived run keeping the reference's name is refused
+    assert "--allow-same-name" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("flag", "value"), [("--base-model", "qwen3_1.7b_s300"), ("--control", "cap_8192")])
+def test_paper_run_rejects_model_and_control(capsys: pytest.CaptureFixture[str], flag: str, value: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        launch.cli(["--paper-run", "lm7qcvrf", "--paper-runs-file", str(PAPER_RUNS), "--print", flag, value])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert f"{flag} cannot be combined with --paper-run" in err and "Hydra overrides" in err
+
+
+# --------------------------------------------------------------------------------------
 # Agreement with the logged wandb configs (fork cache)
 # --------------------------------------------------------------------------------------
 

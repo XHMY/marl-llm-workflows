@@ -593,6 +593,40 @@ def spec_from_paper_run(run_id: str, runs: Mapping[str, Mapping[str, Any]] | Non
     return spec
 
 
+def _rendered(overrides: Sequence[str], key: str) -> str | None:
+    for o in reversed(overrides):
+        _, k, value = parse_override(o)
+        if k == key:
+            return value
+    return None
+
+
+def check_derived_paper_run_name(spec: LaunchSpec, runs: Mapping[str, Mapping[str, Any]]) -> None:
+    """Refuse a derived paper-run launch that would reuse the reference's name and checkpoint dir.
+
+    A launch is derived when it adds Hydra overrides, ``--init-adapter`` or
+    ``--processed-logprobs`` to the paper run. Its checkpoint directory is
+    ``trainer.default_local_dir`` when overridden, else the trainer default
+    ``checkpoints/{project}/{experiment_name}``; it must differ from the reference's
+    ``checkpoints/{PAPER_PROJECT}/{experiment_name}``, and the experiment (wandb) name must
+    differ from the reference's within the same project.
+    """
+    if spec.paper_run is None or not (spec.extra or spec.processed_logprobs or spec.init_adapters):
+        return
+    ref_name = runs[spec.paper_run]["experiment_name"]
+    overrides = build_overrides(spec)
+    project = _rendered(overrides, "trainer.project_name")
+    name = _rendered(overrides, "trainer.experiment_name")
+    ckpt = _rendered(overrides, "trainer.default_local_dir") or f"checkpoints/{project}/{name}"
+    ref_ckpt = f"checkpoints/{PAPER_PROJECT}/{ref_name}"
+    if (project == PAPER_PROJECT and name == ref_name) or os.path.normpath(ckpt) == os.path.normpath(ref_ckpt):
+        raise ValueError(
+            f"--paper-run {spec.paper_run} with extra overrides keeps the reference's experiment name "
+            f"{ref_name!r} (checkpoint dir {ckpt}); pass --name-suffix or --experiment-name, "
+            "or --allow-same-name to write there anyway"
+        )
+
+
 # --------------------------------------------------------------------------------------
 # SLURM
 # --------------------------------------------------------------------------------------
@@ -757,6 +791,11 @@ def _train_parser() -> argparse.ArgumentParser:
     p.add_argument("--name-suffix")
     p.add_argument("--experiment-name")
     p.add_argument("--processed-logprobs", action="store_true", help="log vLLM processed log-probs")
+    p.add_argument(
+        "--allow-same-name",
+        action="store_true",
+        help="with --paper-run: allow a derived launch (extra overrides) to keep the reference's experiment name",
+    )
     p.add_argument("--extra", action="append", default=[], help='extra Hydra overrides, e.g. --extra "a=1 b=2"')
     p.add_argument("--slurm-config", help="configs/slurm/<name>.conf; prints the sbatch script")
     p.add_argument("--time", help="SLURM time limit (replaces the conf's --time)")
@@ -785,7 +824,22 @@ def _spec_from_args(args: argparse.Namespace) -> LaunchSpec:
         if args.gpu_type:
             changes["gpu_type"] = normalize_gpu_type(args.gpu_type)
             changes["gpu_type_explicit"] = True
-        return spec_from_paper_run(args.paper_run, runs, **changes)
+        if args.processed_logprobs:
+            changes["processed_logprobs"] = True
+        if args.resume_from:
+            changes["resume_from"] = args.resume_from
+        if args.init_adapter:
+            changes["init_adapters"] = dict(args.init_adapter)
+        spec = spec_from_paper_run(args.paper_run, runs, **changes)
+        # Same precedence as without --paper-run: --experiment-name replaces the name,
+        # --name-suffix is appended to the paper run's experiment name.
+        if args.experiment_name:
+            spec = replace(spec, experiment_name=args.experiment_name)
+        elif args.name_suffix:
+            spec = replace(spec, experiment_name=f"{spec.experiment_name}-{args.name_suffix}")
+        if not args.allow_same_name:
+            check_derived_paper_run_name(spec, runs)
+        return spec
     missing = [f"--{n}" for n in ("task", "workflow", "policy", "scale") if getattr(args, n) is None]
     if missing:
         raise SystemExit(f"launch.py: {', '.join(missing)} required (or --paper-run)")
@@ -852,7 +906,18 @@ def cli(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["eval"]:
         return _eval_cli(argv[1:])
-    args = _train_parser().parse_args(argv)
+    parser = _train_parser()
+    args = parser.parse_args(argv)
+    if args.paper_run:
+        # The paper run pins its model, control and name; these flags would change them behind it.
+        for flag, value, hydra in (
+            ("--base-model", args.base_model, "actor_rollout_ref.model.path=... trainer.base_model_tag=..."),
+            ("--control", args.control, "the control's overrides"),
+        ):
+            if value is not None:
+                parser.error(
+                    f"{flag} cannot be combined with --paper-run; pass the equivalent Hydra overrides ({hydra}) instead"
+                )
     try:
         spec = _spec_from_args(args)
         if args.chain > 1 and not any(o.lstrip("+").startswith("trainer.wallclock_stop.enable") for o in spec.extra):

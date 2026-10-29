@@ -101,6 +101,23 @@ SLURM confs (`configs/slurm/*.conf`) hold `#SBATCH` lines plus `# META:` lines r
 `GPU_TYPE`, and `CPUS_PER_GPU_{MATH,CODE}` / `MEM_PER_GPU_{MATH,CODE}`. `configs/slurm/example.conf`
 is a template for other clusters.
 
+## Code reward sandbox
+
+Each Code solution is graded in a fresh Python interpreter (`marl_workflows/rewards/code_sandbox.py`
+starts `code_sandbox_runner.py` with `python -I`, in its own session and with a minimal environment).
+The runner loads only the LiveCodeBench test harness from `third_party/rllm` (not the `rllm` package,
+so not torch) plus numpy and pandas, which the harness imports into every solution; it starts at about
+300 MiB of address space. It then runs all tests of the problem in sequence: 3 s per test, stop at the
+first failure, and a global timeout of `min(4 * n_tests + 5, 120)` s, at which the whole session is
+killed, including any processes the solution started. Limits of the runner: address space and data
+segment 4 GiB (`RLLM_CODE_REWARD_MAX_MEMORY_GB` or `_BYTES`; `0` disables), CPU time equal to the
+global timeout, files of at most 64 MiB, no core dumps. In training, the reward function runs on
+threads of the trainer and each grading goes to a spawn process pool of `code_executor_workers`
+workers that import only the sandbox module (tens of MB each). A fresh interpreter is used because
+a memory limit set in a child forked from a process that has imported torch counts the inherited
+address space of several GB. The paper's Code runs used such a forked sandbox, whose effective memory
+limit was tens of MB.
+
 ## Environment variables
 
 | Variable | Default | Meaning |
@@ -108,5 +125,5 @@ is a template for other clusters.
 | `MARL_DATA_DIR` | `~/.cache/marl-llm-workflows` | Dataset registry root (prepared parquet files). |
 | `MARL_INIT_WEIGHT_DIR` | `checkpoints/init_weight` | Root of merged init weights (`<task>/<tag>`). |
 | `MARL_LORA_STRICT` | strict | A request for an unknown role, or a missing role under IP, raises. `0` falls back to the base model instead. |
-| `RLLM_CODE_REWARD_MAX_MEMORY_GB` / `_BYTES` | 4 GiB | Address-space limit of each unit-test process. |
+| `RLLM_CODE_REWARD_MAX_MEMORY_GB` / `_BYTES` | 4 GiB | Address-space and data-segment limit of the code-reward sandbox process (see Code reward sandbox). |
 | `SLURM_JOB_END_TIME` | set by SLURM | Deadline for the wall-clock stop. |

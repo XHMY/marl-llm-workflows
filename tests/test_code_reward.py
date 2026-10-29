@@ -1,16 +1,15 @@
 """Code reward: sandboxed execution, ported cases of fork ``tests/rewards/test_code_reward.py``.
 
-Every program here is tiny and every timeout short. Cases run both in-process (the per-test
-``lcb_check_correctness_v2`` path) and inside the production executor: a spawn
-``ProcessPoolExecutor`` whose workers run ``code_executor_initializer`` (direct mode, one
-subprocess per problem with RLIMIT_AS / RLIMIT_CPU).
+Every program here is tiny and every timeout short. Cases run in-process (each grading starts
+the fresh-interpreter sandbox from the test process), inside the production executor
+(``CodeRewardExecutor``: reward function on threads, gradings in an rllm-free spawn pool) and in
+the evaluator's plain spawn pool. Sandbox internals are tested in ``test_code_sandbox.py``.
 """
 
 from __future__ import annotations
 
 import inspect
 import json
-import multiprocessing
 import signal
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -21,6 +20,7 @@ from rllm.agents.agent import Action
 from rllm.rewards.reward_types import RewardConfig, RewardType
 
 from marl_workflows.rewards import code_reward as cr
+from marl_workflows.rewards import code_sandbox as cs
 
 pytestmark = pytest.mark.stack
 
@@ -202,23 +202,10 @@ CASES = {
 
 @pytest.fixture(scope="module")
 def code_pool():
-    """The production code-reward executor: spawn workers in direct mode."""
-    pool = ProcessPoolExecutor(
-        max_workers=2,
-        mp_context=multiprocessing.get_context("spawn"),
-        initializer=cr.code_executor_initializer,
-    )
+    """The production code-reward executor (the trainer's)."""
+    pool = cr.CodeRewardExecutor(max_workers=2)
     yield pool
     pool.shutdown(wait=True, cancel_futures=True)
-
-
-@pytest.fixture
-def v2_mode():
-    """In-process calls use the per-test (v2) path; restore the module flag afterwards."""
-    saved = cr._USE_DIRECT_EXECUTION
-    cr.set_direct_execution(False)
-    yield
-    cr.set_direct_execution(saved)
 
 
 # --------------------------------------------------------------------------------------
@@ -227,19 +214,15 @@ def v2_mode():
 
 
 def test_no_multiprocessing_manager_in_source() -> None:
-    """The fork replaced every manager-based result channel with a Pipe (finding 0.9)."""
-    source = Path(inspect.getsourcefile(cr)).read_text()
-    assert "Manager(" not in source
+    """No manager-based result channel (finding 0.9), and no forked sandbox."""
+    for module in (cr, cs):
+        source = Path(inspect.getsourcefile(module)).read_text()
+        assert "Manager(" not in source and "multiprocessing.Process(" not in source
 
 
-def test_executor_initializer_sets_direct_mode() -> None:
-    saved = cr._USE_DIRECT_EXECUTION
-    try:
-        cr.set_direct_execution(False)
-        cr.code_executor_initializer()
-        assert cr._USE_DIRECT_EXECUTION is True
-    finally:
-        cr.set_direct_execution(saved)
+def test_executor_pool_workers_do_not_import_rllm(code_pool: cr.CodeRewardExecutor) -> None:
+    stats = code_pool._pool.submit(cs.worker_stats).result(timeout=120)
+    assert not stats["rllm_loaded"] and not stats["torch_loaded"], stats
 
 
 @pytest.mark.parametrize(
@@ -265,7 +248,7 @@ def test_memory_env_parsing(monkeypatch: pytest.MonkeyPatch, env: dict, expected
     monkeypatch.delenv("RLLM_CODE_REWARD_MAX_MEMORY_BYTES", raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
-    assert cr._configured_max_memory_bytes() == expected
+    assert cs._configured_max_memory_bytes() == expected
 
 
 def test_unsupported_sources_raise() -> None:
@@ -284,12 +267,12 @@ def test_extract_code_takes_last_block() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Correctness: in-process v2 path and the spawn pool in direct mode
+# Correctness: in-process, the production executor and the evaluator's plain pool
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case", sorted(CASES))
-def test_reward_v2_in_process(case: str, v2_mode) -> None:
+def test_reward_in_process(case: str) -> None:
     source, tests, response, expected = CASES[case]
     out = cr.code_reward_fn(_task(source, tests), response)
     assert bool(out.is_correct) is expected
@@ -302,28 +285,26 @@ def test_reward_in_code_executor_pool(code_pool: ProcessPoolExecutor) -> None:
     for name, fut in zip(names, futures, strict=True):
         out = fut.result(timeout=120)
         assert bool(out.is_correct) is CASES[name][3], name
-    # Direct mode tests a problem sequentially in one subprocess and stops at the first
-    # failure; the v2 path kills the remaining per-test subprocesses instead.
+    # A problem is tested sequentially in one sandbox process that stops at the first failure.
     out = code_pool.submit(cr.code_reward_fn, _task("primeintellect", DOUBLE_TESTS_SECOND_WRONG), DOUBLE).result(120)
     assert [t["passed"] for t in out.metadata["test_results"]] == [True, False, False]
     assert out.metadata["test_results"][2]["error"] == "skipped (prior test failed)"
     assert out.metadata["passed_tests"] == 1 and out.metadata["total_tests"] == 3
 
 
-@pytest.mark.parametrize("case", ["livecodebench_stdin", "taco_call_based", "codeforces", "wrong_answer"])
-def test_direct_and_v2_paths_agree(case: str) -> None:
-    source, tests, response, _ = CASES[case]
-    tests = cr.taco_to_lcb_format(tests) if source == "taco" else tests
-    code = cr.extract_code_from_model(response)
-    ok_direct, details_direct = cr.lcb_check_correctness_direct(tests, code)
-    ok_v2, details_v2 = cr.lcb_check_correctness_v2(tests, code)
-    assert ok_direct == ok_v2
-    assert details_direct["total_tests"] == details_v2["total_tests"]
-    if ok_direct:
-        assert details_direct["passed_tests"] == details_v2["passed_tests"] == details_v2["total_tests"]
+def test_reward_in_evaluator_pool() -> None:
+    """``evaluate_checkpoints`` grades through ``CodeRewardExecutor`` like the trainer."""
+    pool = cr.CodeRewardExecutor(max_workers=1)
+    try:
+        for name in ("codeforces", "wrong_answer"):
+            source, tests, response, expected = CASES[name]
+            out = pool.submit(cr.code_reward_fn, _task(source, tests), response).result(120)
+            assert bool(out.is_correct) is expected, name
+    finally:
+        pool.shutdown(wait=True)
 
 
-def test_action_object_is_unwrapped(v2_mode) -> None:
+def test_action_object_is_unwrapped() -> None:
     assert cr.code_reward_fn(_task("primeintellect", DOUBLE_TESTS), Action(action=DOUBLE)).is_correct
 
 
@@ -336,13 +317,12 @@ def test_action_object_is_unwrapped(v2_mode) -> None:
 def test_timeout_infinite_loop() -> None:
     """A Python-level loop is stopped by signal.alarm inside the per-test timeout."""
     code = cr.extract_code_from_model(INFINITE_LOOP)
-    for check in (cr.lcb_check_correctness_direct, cr.lcb_check_correctness_v2):
-        start = time.monotonic()
-        ok, _ = check(ONE_TEST, code, timeout=1)
-        elapsed = time.monotonic() - start
-        assert not ok
-        # direct: global cap (1 + 1) * 1 + 5 = 7 s; v2: deadline 1 + 10 = 11 s.
-        assert elapsed < 11.5, (check.__name__, elapsed)
+    start = time.monotonic()
+    ok, details = cr.lcb_check_correctness_direct(ONE_TEST, code, timeout=1)
+    elapsed = time.monotonic() - start
+    assert not ok
+    assert details["test_results"][0]["error_message"] == "Time Limit Exceeded"
+    assert elapsed < 7, elapsed  # well inside the global cap (1 + 1) * 1 + 5 = 7 s
 
 
 @pytest.mark.slow
@@ -350,28 +330,17 @@ def test_cpu_burn_killed_by_rlimit_cpu() -> None:
     """C-level work that holds the GIL is ended by RLIMIT_CPU (SIGXCPU), not by our kill."""
     sample = cr.postprocess_lcb_sample(ONE_TEST)
     code = cr.extract_code_from_model(CPU_BURN)
-    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
-    # timeout=1: RLIMIT_CPU soft limit (1 + 1) * 1 + 5 = 7 s of CPU time.
-    proc = multiprocessing.Process(target=cr._temp_run, args=(sample, code, False, child_conn, 1))
+    # timeout=1: RLIMIT_CPU soft limit (1 + 1) * 1 + 5 = 7 s of CPU time; the wall-clock
+    # timeout is raised to 60 s so that only the CPU limit can end the run.
     start = time.monotonic()
-    proc.start()
-    child_conn.close()
-    proc.join(timeout=60)
+    run = cs.run_fresh(sample, code, timeout=1, global_timeout=60)
     elapsed = time.monotonic() - start
-    if proc.is_alive():
-        proc.kill()
-        proc.join()
-    try:
-        assert proc.exitcode == -signal.SIGXCPU, proc.exitcode
-        with pytest.raises(EOFError):  # killed before it could report
-            parent_conn.recv()
-        assert elapsed < 60
-    finally:
-        parent_conn.close()
-        proc.close()
+    assert run.returncode == -signal.SIGXCPU, run
+    assert run.result is None and not run.timed_out  # killed before it could report
+    assert elapsed < 60
 
 
-def test_memory_cap_turns_large_allocation_into_failure(v2_mode) -> None:
+def test_memory_cap_turns_large_allocation_into_failure() -> None:
     """RLIMIT_AS (4 GiB default) makes a 5 GiB allocation fail with MemoryError."""
     out = cr.code_reward_fn(_task("primeintellect", ONE_TEST), BIG_ALLOC)
     assert not out.is_correct

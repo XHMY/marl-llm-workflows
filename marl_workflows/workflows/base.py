@@ -31,8 +31,8 @@ the names below are kept verbatim from the research fork.
 
 ``MultiAgentWorkflow`` differs from upstream ``rllm.workflows.workflow.Workflow`` only in
 what the fork added to that base class: ``executor`` is optional (the evaluator builds
-workflows without one), a dedicated ``code_reward_executor`` (a spawn ``ProcessPoolExecutor``
-for sandboxed test execution) and ``run_in_code_executor``.
+workflows without one), a dedicated ``code_reward_executor`` (the rllm-free sandbox pool of
+``marl_workflows.rewards.code_reward.CodeRewardExecutor``) and ``run_in_code_executor``.
 """
 
 from __future__ import annotations

@@ -31,7 +31,6 @@ import argparse
 import asyncio
 import json
 import math
-import multiprocessing
 import os
 import signal
 import socket
@@ -40,10 +39,9 @@ import sys
 import time
 import traceback
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from marl_workflows.contracts import TASKS
 from marl_workflows.eval.checkpoints import (
@@ -160,6 +158,9 @@ _MODEL_SCALE = {"0.6b": 1.5, "1.7b": 1.0, "4b": 0.5}
 # Voting runs N parallel candidates per problem.
 _WORKFLOW_SCALE = {"voting": 0.5, "voting_v2": 0.5}
 GPU_TYPE_CHOICES = list(_GPU_BASE)
+
+if TYPE_CHECKING:
+    from marl_workflows.rewards.code_reward import CodeRewardExecutor
 
 
 def detect_gpu_type() -> str | None:
@@ -361,19 +362,15 @@ async def evaluate_checkpoint(
     cls = workflow_cls if workflow_cls is not None else load_object(recipe.workflow_cls)
     kwargs = dict(workflow_kwargs) if workflow_kwargs is not None else build_workflow_kwargs(recipe)
 
-    # DeepCoder grades in a spawn ProcessPool sized to the allocation with direct execution,
-    # the training configuration (code_executor_workers = CPUs, max_concurrent_code_execs = 0).
-    code_reward_executor: ProcessPoolExecutor | None = None
+    # DeepCoder grades through the rllm-free sandbox pool, sized to the allocation as in training
+    # (code_executor_workers = CPUs).
+    code_reward_executor: CodeRewardExecutor | None = None
     if recipe.uses_code_executor and "code_reward_executor" not in kwargs:
-        from marl_workflows.rewards.code_reward import code_executor_initializer
+        from marl_workflows.rewards.code_reward import CodeRewardExecutor
 
         workers = allocated_cpu_count()
-        print(f"Using code reward ProcessPoolExecutor with {workers} workers")
-        code_reward_executor = ProcessPoolExecutor(
-            max_workers=workers,
-            mp_context=multiprocessing.get_context("spawn"),
-            initializer=code_executor_initializer,
-        )
+        print(f"Using code reward sandbox pool with {workers} workers")
+        code_reward_executor = CodeRewardExecutor(max_workers=workers)
         kwargs["code_reward_executor"] = code_reward_executor
 
     from tqdm import tqdm

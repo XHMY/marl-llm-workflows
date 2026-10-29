@@ -19,14 +19,13 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-import multiprocessing
 import os
 import shutil
 import uuid
 import warnings
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Executor
 from functools import reduce
 from pprint import pprint
 from typing import Any
@@ -162,7 +161,7 @@ class MultiAgentWorkflowTrainer(AgentWorkflowPPOTrainer):
         self._last_saved_step = 0
         self._lora_state_checked = False
         self._val_acct = ValDropAccounting()
-        self._code_executor: ProcessPoolExecutor | None = None
+        self._code_executor: Executor | None = None
         self._tracking_logger: ResumableTracking | None = None
 
     # ------------------------------------------------------------------ config
@@ -234,12 +233,12 @@ class MultiAgentWorkflowTrainer(AgentWorkflowPPOTrainer):
             episode_log_dir = self.config.trainer.get("episode_log_dir", f"logs/{self.config.trainer.project_name}/{self.config.trainer.experiment_name}")
             episode_logger = EpisodeLogger(base_dir=episode_log_dir, subdirectory="episodes")
 
-        # >>> MARL(W3): process pool for code rewards, handed to every workflow through workflow_args
+        # >>> MARL(W3): code-reward executor (rllm-free spawn pool), handed to every workflow through workflow_args
         if self._uses_code_executor():
-            from marl_workflows.rewards.code_reward import code_executor_initializer
+            from marl_workflows.rewards.code_reward import CodeRewardExecutor
 
             n_workers = int(self.config.rllm.workflow.get("code_executor_workers", 0) or 0) or allocated_cpu_count()
-            self._code_executor = ProcessPoolExecutor(max_workers=n_workers, mp_context=multiprocessing.get_context("spawn"), initializer=code_executor_initializer)
+            self._code_executor = CodeRewardExecutor(max_workers=n_workers)
             self.workflow_args = {**self.workflow_args, "code_reward_executor": self._code_executor}
         # <<< MARL(W3)
 

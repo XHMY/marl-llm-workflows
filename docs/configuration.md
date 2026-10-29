@@ -90,7 +90,7 @@ call per role per training step, so under IP the learning-rate scheduler advance
 | `--cpus-per-gpu`, `--mem-per-gpu` | conf META, else 8 / 64G (Math), 16 / 80G (Code on H100) | SLURM resources; Code also sizes the code-execution pool. |
 | `--base-model` | none | Merged init weights `$MARL_INIT_WEIGHT_DIR/<task>/<tag>`. |
 | `--init-adapter role=path` | none | Sets `+rllm.workflow.initial_lora_weights.<role>`. |
-| `--resume-from` | none | Resume from a `global_step_N` directory (`trainer.resume_mode=resume_path`). |
+| `--resume-from` | none | Resume from a `global_step_N` directory (`trainer.resume_mode=resume_path`). IP runs resume only from checkpoints written by this repository; the research fork's IP FSDP shards do not load (use `--init-adapter` with its `lora_adapter_{role}` directories). |
 | `--project`, `--name-suffix`, `--experiment-name` | `marl-llm-workflows`, none, derived | Naming; the experiment name is `{workflow}-{model}-{multi_lora or share_policy}-{math or deepcoder_primeintellect}[-suffix]`. |
 | `--processed-logprobs` | off | Adds the `logprobs_mode` override above. |
 | `--extra "k=v ..."`, positional overrides | none | Extra Hydra overrides; a key given again replaces the earlier value. |

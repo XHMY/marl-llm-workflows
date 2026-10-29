@@ -165,7 +165,8 @@ Notes on the controls:
   (`MARL_INIT_WEIGHT_DIR` defaults to `checkpoints/init_weight`). Any cell accepts the same weights
   with `--base-model qwen3_<size>_s300`; the tag becomes part of the experiment name.
 - `cap_8192` resumes the Eval-Opt IP 1.7B Math run from its step-320 checkpoint with a longer response
-  cap; pass that checkpoint with `--resume-from`.
+  cap; pass that checkpoint with `--resume-from`. It must be a checkpoint written by this repository: the
+  research fork's IP FSDP shards do not load.
 - `init_from_sa_adapters` loads trained LoRA adapters into the named roles before training. Under SP
   the `generator` adapter (or the first one given) initializes the shared adapter. For
   Orchestrator-Workers, an adapter given for `generator` initializes `worker`.

@@ -51,33 +51,39 @@ def test_docs_list_every_patch(repo_root: Path):
     assert patches.render_markdown() in doc, "docs/upstream-patches.md is stale: paste patches.render_markdown()"
 
 
-def test_scoped_p1_calls_hook_with_pristine_config_and_restores():
+def test_scoped_p1_builds_with_pristine_config_and_restores():
     original = fsdp_workers.get_peft_model
     seen = []
-
-    def hook(peft_model, cfg):
-        seen.append((peft_model, cfg))
 
     class FakeConfig:
         def __init__(self):
             self.mutated = False
 
-    def fake_original(model, cfg):
+    def fake_original(model, cfg, adapter_name="default"):
         cfg.mutated = True  # PEFT mutates the config it wraps with
-        return ("peft", model)
+        return ("peft", model, adapter_name)
+
+    def build(get_peft_model, model, cfg):
+        seen.append((get_peft_model, model, cfg, cfg.mutated))
+        return get_peft_model(model, cfg, adapter_name="generator")
 
     fsdp_workers.get_peft_model = fake_original
     try:
-        with patches.scoped_multi_adapter_peft(hook):
+        with patches.scoped_multi_adapter_peft(build):
             assert patches.applied_patches() == ["P1"]
             cfg = FakeConfig()
             out = fsdp_workers.get_peft_model("model", cfg)
+            with pytest.raises(TypeError, match="extra arguments"):
+                fsdp_workers.get_peft_model("model", cfg, adapter_name="x")
             with pytest.raises(RuntimeError, match="re-entrant"):
-                with patches.scoped_multi_adapter_peft(hook):
+                with patches.scoped_multi_adapter_peft(build):
                     pass
-        assert out == ("peft", "model")
-        assert seen[0][0] == out
-        assert seen[0][1] is not cfg and seen[0][1].mutated is False
+        # the builder's result is returned as is; upstream's own get_peft_model call never happens
+        assert out == ("peft", "model", "generator")
+        assert len(seen) == 1
+        got_original, got_model, got_cfg, was_mutated = seen[0]
+        assert got_original is fake_original and got_model == "model"
+        assert got_cfg is not cfg and was_mutated is False and cfg.mutated is False
         assert fsdp_workers.get_peft_model is fake_original
         assert patches.applied_patches() == []
     finally:
@@ -87,7 +93,7 @@ def test_scoped_p1_calls_hook_with_pristine_config_and_restores():
 def test_scoped_p1_restores_on_exception():
     original = fsdp_workers.get_peft_model
     with pytest.raises(KeyError):
-        with patches.scoped_multi_adapter_peft(lambda m, c: None):
+        with patches.scoped_multi_adapter_peft(lambda g, m, c: None):
             assert fsdp_workers.get_peft_model is not original
             raise KeyError("boom")
     assert fsdp_workers.get_peft_model is original

@@ -20,7 +20,6 @@ import asyncio
 import json
 import math
 import os
-import shutil
 import uuid
 import warnings
 from collections import Counter, defaultdict
@@ -767,8 +766,11 @@ class MultiAgentWorkflowTrainer(AgentWorkflowPPOTrainer):
         if self._share_policy:
             return
         actor_dir = actor_ckpt_dir(self.config.trainer.default_local_dir, self.global_steps)
-        # The upstream save writes only the dead "default" adapter here; it is misleading under IP.
-        shutil.rmtree(os.path.join(actor_dir, adapter_dirname(None)), ignore_errors=True)
+        # Under IP the worker skips upstream's lora_adapter/ export (there is no "default" adapter); its presence
+        # would make evaluation read this checkpoint as SP (eval.checkpoints.detect_adapter_layout).
+        shared_dir = os.path.join(actor_dir, adapter_dirname(None))
+        if os.path.exists(shared_dir):
+            raise RuntimeError(f"IP checkpoint must not contain the SP adapter directory {shared_dir}")
         for role in self._agent_names:
             path = os.path.join(actor_dir, adapter_dirname(role))
             self.actor_rollout_wg.save_single_lora_adapter(

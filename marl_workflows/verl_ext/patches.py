@@ -80,15 +80,15 @@ PATCHES: tuple[PatchInfo, ...] = (
             "ActorRolloutRefWorker._build_model_optimizer, :269-577)"
         ),
         reason_no_hook=(
-            "The per-role adapters must be added after the stock PEFT wrap and before get_fsdp_wrap_policy / "
-            "FSDP wrapping, inside one ~300-line method that takes no callback; FSDP1 flat parameters cannot "
-            "be extended after wrapping."
+            "The per-role adapters must be created in place of the stock PEFT wrap and before "
+            "get_fsdp_wrap_policy / FSDP wrapping, inside one ~300-line method that takes no callback; FSDP1 "
+            "flat parameters cannot be extended or pruned after wrapping."
         ),
         behaviour_change=(
-            "Only inside the `with` block: get_peft_model(model, cfg) returns the stock PeftModel after "
-            "calling hook(peft_model, pristine_copy_of_cfg), which adds one adapter per role and sets "
-            "requires_grad. The original is restored in `finally`, also on exceptions. Outside the block "
-            "nothing changes."
+            "Only inside the `with` block: get_peft_model(model, cfg) returns build(peft.get_peft_model, model, "
+            "pristine_copy_of_cfg), which creates the first role's adapter as PEFT's initial adapter, adds one "
+            "adapter per further role and sets requires_grad, so no adapter named 'default' exists. The "
+            "original is restored in `finally`, also on exceptions. Outside the block nothing changes."
         ),
         scope="scoped",
         applied_by="MultiAgentAsyncActorRolloutRefWorker._build_model_optimizer (role='actor', IP only)",
@@ -158,11 +158,14 @@ def applied_patches() -> list[str]:
 
 
 @contextmanager
-def scoped_multi_adapter_peft(hook: Callable[[Any, Any], None]) -> Iterator[None]:
-    """P1: inside the block, ``fsdp_workers.get_peft_model`` also runs ``hook(peft_model, lora_config)``.
+def scoped_multi_adapter_peft(build: Callable[[Callable[..., Any], Any, Any], Any]) -> Iterator[None]:
+    """P1: inside the block, ``fsdp_workers.get_peft_model(model, cfg)`` returns ``build(original, model, cfg_copy)``.
 
-    ``hook`` receives a deep copy of the ``LoraConfig`` taken *before* PEFT mutates it, which equals the
-    research fork's fresh ``LoraConfig(**lora_config)`` per extra adapter. Not re-entrant.
+    ``original`` is the module's ``get_peft_model`` (peft's), ``cfg_copy`` a deep copy of the ``LoraConfig``
+    upstream passed, taken before anything mutates it. ``build`` creates the ``PeftModel`` itself (under IP the
+    first role is PEFT's initial adapter, so the stock ``default`` adapter is never created). Upstream calls
+    ``get_peft_model(actor_module, LoraConfig(...))`` with no further arguments; any other call raises. Not
+    re-entrant.
     """
     import verl.workers.fsdp_workers as fsdp_workers
 
@@ -171,10 +174,12 @@ def scoped_multi_adapter_peft(hook: Callable[[Any, Any], None]) -> Iterator[None
     original = fsdp_workers.get_peft_model
 
     def get_peft_model_with_role_adapters(model: Any, peft_config: Any, *args: Any, **kwargs: Any) -> Any:
-        pristine = copy.deepcopy(peft_config)
-        peft_model = original(model, peft_config, *args, **kwargs)
-        hook(peft_model, pristine)
-        return peft_model
+        if args or kwargs:
+            raise TypeError(
+                "P1 expects upstream's call get_peft_model(model, lora_config); got extra arguments "
+                f"{args!r} {sorted(kwargs)!r} (re-check the anchor at fsdp_workers.py:439)"
+            )
+        return build(original, model, copy.deepcopy(peft_config))
 
     fsdp_workers.get_peft_model = get_peft_model_with_role_adapters
     _applied["P1"] = original

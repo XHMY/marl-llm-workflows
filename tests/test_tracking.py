@@ -134,19 +134,22 @@ def _trainer_stub(tmp_path, *, share_policy: bool):
     return trainer
 
 
-@pytest.fixture
-def stub_upstream_save(monkeypatch: pytest.MonkeyPatch):
-    """Upstream save: writes only the shared adapter directory, as verl does."""
+def _stub_save(monkeypatch: pytest.MonkeyPatch, *, shared_dir_under_ip: bool) -> None:
+    """Upstream save through the worker: the shared adapter directory under SP only (the IP worker skips it)."""
     from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 
     def fake_save(self) -> None:
-        os.makedirs(
-            os.path.join(
-                self.config.trainer.default_local_dir, f"global_step_{self.global_steps}", "actor", "lora_adapter"
-            )
-        )
+        actor = os.path.join(self.config.trainer.default_local_dir, f"global_step_{self.global_steps}", "actor")
+        os.makedirs(actor)
+        if self._share_policy or shared_dir_under_ip:
+            os.makedirs(os.path.join(actor, "lora_adapter"))
 
     monkeypatch.setattr(RayPPOTrainer, "_save_checkpoint", fake_save)
+
+
+@pytest.fixture
+def stub_upstream_save(monkeypatch: pytest.MonkeyPatch):
+    _stub_save(monkeypatch, shared_dir_under_ip=False)
 
 
 def test_ip_checkpoint_writes_per_role_adapters_and_metadata(tmp_path, stub_upstream_save) -> None:
@@ -179,3 +182,11 @@ def test_sp_checkpoint_keeps_shared_adapter(tmp_path, stub_upstream_save) -> Non
     assert (tmp_path / "ckpt" / "global_step_5" / "actor" / "lora_adapter").is_dir()
     assert trainer.saved_adapters == []
     assert (tmp_path / "ckpt" / "training_metadata.json").exists()
+
+
+def test_ip_checkpoint_refuses_shared_adapter_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_save(monkeypatch, shared_dir_under_ip=True)
+    trainer = _trainer_stub(tmp_path, share_policy=False)
+    with pytest.raises(RuntimeError, match="must not contain the SP adapter directory"):
+        trainer._save_checkpoint()
+    assert trainer.saved_adapters == []

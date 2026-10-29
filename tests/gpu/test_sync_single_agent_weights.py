@@ -3,7 +3,8 @@
 Port of the research fork's ``tests/trainer/verl/test_sync_single_agent_weights.py`` (five tests for the SP
 path: the ``default`` adapter is registered under 123 on every sync, the first included) with the patch
 targets moved to ``marl_workflows.verl_ext.workers``, plus two tests for the IP path (ids 123..123+N-1 on the
-first and on later syncs; collection precedes offload).
+first and on later syncs; collection precedes offload). Under IP the model carries only the role adapters (no
+``default``), and nothing is collected under the name ``default``.
 
 The collaborators are patched out and a recording stub stands in for the rollout engine, so the tests also run
 on CPU once the stack imports; they carry the ``gpu`` marker so that they run with the GPU suite.
@@ -253,11 +254,12 @@ def test_multi_agent_registers_every_role_on_every_sync(base_sync_done, sleep_le
     """Every role adapter is registered under index + 123, on the first and on later syncs."""
     events = []
     worker, peft_model = _make_worker(
-        events, base_sync_done=base_sync_done, sleep_level=sleep_level, adapters=("default", *ROLES)
+        events, base_sync_done=base_sync_done, sleep_level=sleep_level, adapters=tuple(ROLES)
     )
     _run_multi(worker, peft_model, events, ROLES)
 
     need_base = not base_sync_done or sleep_level == 2
+    assert all(name != "default" for _, name in _collects(events)), events
     expected_collects = [(True, r) for r in ROLES] + ([(False, ROLES[0])] if need_base else [])
     assert _collects(events) == expected_collects, events
     pushes = _pushes(events)
@@ -273,7 +275,7 @@ def test_multi_agent_registers_every_role_on_every_sync(base_sync_done, sleep_le
 
 def test_multi_agent_collection_precedes_offload_and_validates_names():
     events = []
-    worker, peft_model = _make_worker(events, base_sync_done=False, sleep_level=2, adapters=("default", *ROLES))
+    worker, peft_model = _make_worker(events, base_sync_done=False, sleep_level=2, adapters=tuple(ROLES))
     _run_multi(worker, peft_model, events, ROLES)
     kinds = _kinds(events)
     offload_at = kinds.index("offload")
@@ -281,6 +283,6 @@ def test_multi_agent_collection_precedes_offload_and_validates_names():
     assert all(i > offload_at for i, k in enumerate(kinds) if k == "push"), events
 
     events = []
-    worker, peft_model = _make_worker(events, base_sync_done=True, sleep_level=1, adapters=("default", "generator"))
+    worker, peft_model = _make_worker(events, base_sync_done=True, sleep_level=1, adapters=("generator",))
     with pytest.raises(ValueError, match="not found in peft_config"):
         _run_multi(worker, peft_model, events, ["generator", "aggregator"])

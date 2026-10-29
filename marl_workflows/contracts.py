@@ -111,10 +111,16 @@ def validate_trajectory_name(name: str) -> None:
 def validate_agent_names(agent_names: Iterable[str], share_policy: bool) -> list[str]:
     """Check the role list and return it as a plain list.
 
-    Always: non-empty, unique, each name letters only. Under IP additionally: ``default`` is
-    forbidden (the dead shared adapter would be selected and nothing would train), and no
-    name may be a substring of another, because the worker sets ``requires_grad`` by a
-    substring match of the role on parameter names.
+    Always: non-empty, unique, each name letters only. Under IP additionally: ``default``
+    (:data:`SHARED_ADAPTER`) is reserved, and no name may be a substring of another, because
+    the worker sets ``requires_grad`` by a substring match of the role on parameter names.
+
+    The IP model has no ``default`` adapter, so the name would not clash inside PEFT, but it
+    stays reserved because it is the SP adapter's name everywhere else: upstream code that
+    names no adapter (verl's ``save_checkpoint`` export to ``lora_adapter/``,
+    ``collect_lora_params`` / ``layered_summon_lora_params`` without ``adapter_name``, the
+    ``lora_adapter_path`` warm start) would silently act on that role, and its FSDP shards
+    would carry SP's adapter keys.
     """
     names = [str(n) for n in agent_names]
     if not names:

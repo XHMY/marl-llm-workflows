@@ -1,11 +1,15 @@
 """``MultiAgentAsyncActorRolloutRefWorker``: verl's hybrid actor/rollout worker with one LoRA adapter per role.
 
 Under IP (``share_policy=False``) every role in ``actor_rollout_ref.agent_names`` gets its own PEFT adapter,
-created before FSDP wrapping (patch P1). All adapters live in one model, one AdamW optimizer and one LR
-scheduler; ``set_active_lora`` selects the adapter that the next forward/backward uses and freezes the
-others, so inactive adapters get ``None`` gradients and AdamW leaves them untouched. Every weight sync
-registers each adapter in vLLM under ``agent_names.index(role) + 123``. Under SP the single ``default``
-adapter is registered under 123 on every sync, the first one included.
+created before FSDP wrapping (patch P1): the first role is PEFT's initial adapter and the others are added to
+it, so the model carries exactly the role adapters and no adapter named ``default``. All adapters live in one
+model, one AdamW optimizer and one LR scheduler; ``set_active_lora`` selects the adapter that the next
+forward/backward uses and freezes the others, so inactive adapters get ``None`` gradients and AdamW leaves
+them untouched. Every weight sync registers each adapter in vLLM under ``agent_names.index(role) + 123``.
+The FSDP checkpoint holds the role adapters only; upstream's ``actor/lora_adapter/`` export (which reads the
+``default`` adapter) is skipped, and the trainer writes ``lora_adapter_{role}/`` per role instead. Under SP
+nothing differs from upstream: the single ``default`` adapter is registered under 123 on every sync, the
+first one included, and upstream's save writes ``actor/lora_adapter/``.
 
 The guards on ``len(agent_names) >= 1`` (contract C9) keep a single-role IP run (the SA-RL baseline) on the
 multi-adapter path. Importing this module patches nothing (``patches.applied_patches()`` stays empty).
@@ -22,7 +26,7 @@ from typing import Any
 
 import torch.distributed as dist
 from omegaconf import DictConfig
-from peft import TaskType
+from peft import PeftModel, TaskType
 from safetensors.torch import save_file
 from torch.distributed.tensor import DTensor
 from verl.single_controller.base.decorator import Dispatch, register
@@ -99,53 +103,72 @@ class MultiAgentAsyncActorRolloutRefWorker(AsyncActorRolloutRefWorker):
                 "under IP use actor_rollout_ref.initial_lora_adapters.<role> instead"
             )
         self._marl_adapters_added = False
-        with patches.scoped_multi_adapter_peft(self._add_role_adapters):
+        with patches.scoped_multi_adapter_peft(self._build_role_adapters):
             built = super()._build_model_optimizer(*args, **kwargs)
         if not self._marl_adapters_added:
             raise RuntimeError("P1 did not run: upstream _build_model_optimizer no longer calls get_peft_model")
         return built
 
-    def _add_role_adapters(self, peft_model: Any, lora_config: Any) -> None:
-        """Add one adapter per role to ``peft_model`` (port of the fork's ``fsdp_workers.py:470-505``).
+    def _build_role_adapters(self, get_peft_model: Any, model: Any, lora_config: Any) -> Any:
+        """Wrap ``model`` with one adapter per role and return the ``PeftModel`` (P1 builder; IP only).
 
-        Roles are added in ``agent_names`` order, so random initialization consumes the RNG as the fork did.
-        ``initial_lora_adapters[role]`` warm-starts a role from a saved PEFT adapter. The stock ``default``
-        adapter is kept but frozen: it carries no gradient and keeps the fork's FSDP layout, so fork
-        checkpoints resume.
+        The first role of ``agent_names`` is PEFT's initial adapter (``get_peft_model(..., adapter_name=role)``,
+        or ``PeftModel.from_pretrained`` for a warm start) and the others are added in ``agent_names`` order
+        (``add_adapter``, or ``load_adapter`` for a warm start), so no adapter named ``default`` exists. Each
+        fresh role gets its own deep copy of the config upstream built, as the fork's
+        ``LoraConfig(**lora_config)`` per adapter (fork ``fsdp_workers.py:470-505``).
+        ``initial_lora_adapters[role]`` warm-starts a role from a saved PEFT adapter directory.
+
+        Unlike the fork, no frozen ``default`` adapter is created first, so the random LoRA-A initialization
+        of role ``k`` draws what the fork's adapter ``k - 1`` (``default`` for ``k = 0``) drew, and the FSDP
+        shards hold the role adapters only (the fork's IP shards do not load; see ``load_checkpoint``).
         """
         names = self._marl_agent_names()
         initial = self.config.get("initial_lora_adapters", None) or {}
         use_shm = self.config.model.get("use_shm", False)
         if self.rank == 0:
             print(f"[Multi-Agent LoRA] Initializing {len(names)} adapters: {names}")
+        peft_model: Any = None
         for name in names:
-            if name == contracts.SHARED_ADAPTER:
-                continue
             path = initial.get(name) if initial else None
             if path:
                 local_path = copy_to_local(path, use_shm=use_shm)
-                peft_model.load_adapter(local_path, adapter_name=name, is_trainable=True)
+                if peft_model is None:
+                    peft_model = PeftModel.from_pretrained(model, local_path, adapter_name=name, is_trainable=True)
+                else:
+                    peft_model.load_adapter(local_path, adapter_name=name, is_trainable=True)
                 if isinstance(peft_model.peft_config[name].task_type, str):
                     peft_model.peft_config[name].task_type = TaskType.CAUSAL_LM
                 if self.rank == 0:
                     print(f"[Multi-Agent LoRA] Loaded pre-trained adapter '{name}' from: {path}")
             else:
-                peft_model.add_adapter(adapter_name=name, peft_config=copy.deepcopy(lora_config))
+                if peft_model is None:
+                    peft_model = get_peft_model(model, copy.deepcopy(lora_config), adapter_name=name)
+                else:
+                    peft_model.add_adapter(adapter_name=name, peft_config=copy.deepcopy(lora_config))
                 if self.rank == 0:
                     print(f"[Multi-Agent LoRA] Added fresh adapter: {name}")
+        if list(peft_model.peft_config) != names:
+            raise RuntimeError(
+                f"[Multi-Agent LoRA] adapters {list(peft_model.peft_config)} differ from agent_names {names}"
+            )
         # The FSDP wrap policy and the optimizer's parameter list are built from requires_grad, so every
-        # role adapter must be trainable here; set_active_lora narrows it to one role per update.
+        # LoRA parameter (each belongs to a role; there is no dead adapter) is trainable here;
+        # set_active_lora narrows it to one role per update.
         for pname, param in peft_model.named_parameters():
-            param.requires_grad = "lora" in pname and contracts.SHARED_ADAPTER not in pname
+            param.requires_grad = "lora" in pname
         self.current_active_lora = names[0]
         self._marl_adapters_added = True
         if self.rank == 0:
             print(f"[Multi-Agent LoRA] All adapters initialized. Active adapter: {names[0]}")
+        return peft_model
 
     def _marl_check_role_params(self) -> None:
-        """Each role must select at least one parameter, only LoRA ones, and the same set as the fork's rule."""
+        """Each role selects at least one parameter, only LoRA ones, the same set as the fork's rule, and every
+        LoRA parameter belongs to some role (no adapter outside ``agent_names``, such as ``default``)."""
         param_names = [name for name, _ in self.actor_module_fsdp.named_parameters()]
-        for role in self._marl_agent_names():
+        roles = self._marl_agent_names()
+        for role in roles:
             selected = [n for n in param_names if param_belongs_to_adapter(n, role)]
             fork_selected = [n for n in param_names if role in n]
             if not selected or any("lora" not in n for n in selected) or selected != fork_selected:
@@ -154,6 +177,9 @@ class MultiAgentAsyncActorRolloutRefWorker(AsyncActorRolloutRefWorker):
                     f"[Multi-Agent LoRA] role {role!r} does not select exactly its LoRA parameters "
                     f"({len(selected)} selected; e.g. {bad[:3]})"
                 )
+        stray = [n for n in param_names if "lora" in n and not any(param_belongs_to_adapter(n, r) for r in roles)]
+        if stray:
+            raise ValueError(f"[Multi-Agent LoRA] LoRA parameters outside agent_names {roles}: e.g. {stray[:3]}")
 
     # ------------------------------------------------------------------ RPCs
 
@@ -239,6 +265,49 @@ class MultiAgentAsyncActorRolloutRefWorker(AsyncActorRolloutRefWorker):
         )
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None) -> None:
+        """FSDP checkpoint; under IP without upstream's ``lora_adapter/`` export (``fsdp_workers.py:1048-1072``).
+
+        Upstream exports ``peft_config["default"]`` to ``{local_path}/lora_adapter/``; under IP that adapter does
+        not exist (upstream would fail on ``asdict({})``) and the per-role directories are written by
+        ``save_single_lora_adapter``. The FSDP part is upstream's ``:1037-1046`` and ``:1074-1075``. SP and
+        non-LoRA runs call upstream unchanged.
+        """
+        if not (self._is_lora and self._marl_multi_adapter()):
+            return super().save_checkpoint(
+                local_path, hdfs_path=hdfs_path, global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep
+            )
+        assert self._is_actor
+        if self._is_offload_param:
+            load_fsdp_model_to_gpu(self.actor_module_fsdp)
+        self.checkpoint_manager.save_checkpoint(
+            local_path=local_path, hdfs_path=hdfs_path, global_step=global_step, max_ckpt_to_keep=max_ckpt_to_keep
+        )
+        dist.barrier()
+        if self._is_offload_param:
+            offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=False) -> None:
+        """Upstream load; under IP a failure names the unsupported source (the research fork's IP shards).
+
+        The fork's IP shards also hold its frozen ``default`` adapter, so their keys and FSDP flat-parameter
+        layout differ from this worker's; initialise from the fork's ``lora_adapter_{role}`` directories with
+        ``initial_lora_adapters`` instead.
+        """
+        try:
+            return super().load_checkpoint(local_path, hdfs_path=hdfs_path, del_local_after_load=del_local_after_load)
+        except (RuntimeError, KeyError, ValueError) as e:
+            if local_path is None or not (self._is_lora and self._marl_multi_adapter()):
+                raise
+            raise RuntimeError(
+                f"[Multi-Agent LoRA] could not load the IP checkpoint {local_path}. IP runs resume only from FSDP "
+                "shards written by marl-llm-workflows; shards of the research fork carry a 'default' adapter and "
+                "are not supported (initialise from its lora_adapter_{role} directories via "
+                "actor_rollout_ref.initial_lora_adapters instead)."
+            ) from e
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def probe_rollout_lora_state(self) -> dict[str, Any]:

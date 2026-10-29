@@ -7,6 +7,7 @@ correct iff it contains ``PASS``; it runs through ``run_in_code_executor`` on a
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +85,14 @@ def _rewards(episode: Episode) -> list[float]:
     return [t.reward for t in episode.trajectories]
 
 
+def _without_names(episode: Episode) -> dict[str, Any]:
+    """The episode as plain data, without trajectory names and the random trajectory uids."""
+    data = dataclasses.asdict(episode)
+    for traj in data["trajectories"]:
+        del traj["uid"], traj["name"]
+    return data
+
+
 def _check_contract(workflow: str, episode: Episode, engine: FakeRolloutEngine) -> None:
     recipe = get_recipe("deepcoder", workflow)
     for traj in episode.trajectories:
@@ -138,6 +147,25 @@ async def test_voting_pooled_names_and_unconditional_broadcast(executor, reward_
         "success": 1,
         "generator_attempts": 3,
     }
+
+
+async def test_voting_separate_vote_groups(executor, reward_calls) -> None:
+    """Code default: one pooled GRPO group; the flag changes the voter names and nothing else."""
+    script = {"generator": [FAIL, PASS, NO_CODE], "aggregator": "\\boxed{2}"}
+    episodes, engines = {}, {}
+    for separate in (False, True):
+        engines[separate] = FakeRolloutEngine(dict(script))
+        overrides = {"separate_vote_groups": True} if separate else {}
+        wf = _build("voting", engines[separate], executor, **overrides)
+        assert wf.separate_vote_groups is separate
+        episodes[separate] = await wf.run(_task(), UID)
+        _check_contract("voting", episodes[separate], engines[separate])
+    assert _names(episodes[False]) == ["generator", "generator", "generator", "aggregator"]
+    assert _names(episodes[True]) == ["generator0", "generator1", "generator2", "aggregator"]
+    assert _without_names(episodes[False]) == _without_names(episodes[True])
+    calls = {k: [(c.messages, c.kwargs) for c in e.calls] for k, e in engines.items()}
+    assert calls[False] == calls[True]
+    assert reward_calls == [PASS, PASS]
 
 
 async def test_voting_wrong_selection(executor, reward_calls) -> None:

@@ -62,7 +62,7 @@ class VotingMathPromptHetWorkflow(VotingMathWorkflow):
         response = self.extract_response(output)
 
         trajectory = Trajectory(
-            name=f"{self.GENERATOR_NAME}{vote_index}",
+            name=self.generator_trajectory_name(vote_index),
             steps=[
                 Step(
                     chat_completions=messages

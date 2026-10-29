@@ -4,13 +4,17 @@ This module provides a concrete implementation of VotingWorkflow
 for code generation with parallel generation and aggregation: generate N solutions,
 aggregate, return result.
 
-Unlike Math Voting, all generators share the trajectory name ``generator`` (one pooled GRPO
-group), no ``application_id`` is sent, only the selected solution is tested, and the final
-outcome reward is broadcast to every trajectory unconditionally.
+Unlike Math Voting, ``separate_vote_groups`` defaults to False (all generators share the
+trajectory name ``generator``: one pooled GRPO group), no ``application_id`` is sent, only the
+selected solution is tested, and the final outcome reward is broadcast to every trajectory
+unconditionally.
 
 Ported from the single-pass path of fork ``examples/deepcoder/deepcoder_voting_workflow.py``
 (:1-357); only the imports, prompt loading (``prompts`` dict or ``load_prompts``, no
-``prompt_file``), the broadcast helper and the removed test loop differ.
+``prompt_file``), the broadcast helper and the removed test loop differ. The fork's
+``_generate_single_with_feedback`` (always called without feedback) equals the base class's
+``_generate_single`` without ``uid`` except for the trajectory name, so the base method is used
+with ``separate_vote_groups=False``.
 """
 
 import asyncio
@@ -52,6 +56,7 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
         max_tests_to_show: int = 3,
         public_test_only: bool = False,
         use_final_outcome_reward: bool = False,
+        separate_vote_groups: bool = False,
         **kwargs,
     ):
         """Initialize the code voting workflow.
@@ -67,6 +72,9 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
             public_test_only: Kept for config compatibility; unused
             use_final_outcome_reward: Stored for compatibility; the single pass broadcasts
                 the final outcome reward regardless
+            separate_vote_groups: If False (default, as in the paper's Code runs), every voter
+                trajectory is named ``generator`` (one pooled GRPO group); if True, voters are
+                named ``generator{vote_index}`` (one group per voter)
             **kwargs: Additional arguments passed to parent workflow
         """
         reject_test_loop(enable_test_loop)
@@ -74,6 +82,7 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
             rollout_engine=rollout_engine,
             n_votes=n_votes,
             use_final_outcome_reward=use_final_outcome_reward,
+            separate_vote_groups=separate_vote_groups,
             **kwargs,
         )
         self._prompts = prompts
@@ -187,45 +196,6 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
 
     # ===== Workflow execution =====
 
-    async def _generate_single_with_feedback(
-        self,
-        task: dict[str, Any],
-        vote_index: int,
-        test_feedback: str = None,
-    ) -> Trajectory:
-        """Generate a single response (``test_feedback`` is always None: no test loop)."""
-        prompt = self.build_generator_prompt(task)
-
-        messages = [{"role": "user", "content": prompt}]
-
-        output = await self.rollout_engine.get_model_response(
-            messages,
-            agent_name=self.GENERATOR_NAME,
-        )
-
-        response = self.extract_response(output)
-
-        trajectory = Trajectory(
-            name=self.GENERATOR_NAME,
-            steps=[
-                Step(
-                    chat_completions=messages
-                    + [
-                        {
-                            "role": "assistant",
-                            "content": output.content,
-                            "reasoning": output.reasoning,
-                        }
-                    ],
-                    thought=output.reasoning,
-                    action=response,
-                    model_output=output,
-                )
-            ],
-        )
-
-        return trajectory
-
     async def run(self, task: dict[str, Any], uid: str, **kwargs) -> Episode:
         """Execute the voting workflow.
 
@@ -251,7 +221,8 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
     ) -> Episode:
         """Execute single-pass voting without test loop."""
         # Step 1: Generate N responses in parallel
-        generation_tasks = [self._generate_single_with_feedback(task, i, None) for i in range(self.n_votes)]
+        # No uid: the fork sent no application_id for Code voters.
+        generation_tasks = [self._generate_single(task, i) for i in range(self.n_votes)]
         generator_trajectories = await asyncio.gather(*generation_tasks)
 
         # Extract responses

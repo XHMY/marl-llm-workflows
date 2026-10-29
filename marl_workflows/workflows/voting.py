@@ -43,6 +43,16 @@ class VotingWorkflow(MultiAgentWorkflow):
     - extract_response(): Extract relevant content from model output
     - on_generation_complete(): Hook called after all parallel generations complete
 
+    Voter trajectory names (``separate_vote_groups``): the trajectory name decides two things.
+    rLLM forms the GRPO advantage group of a sample from ``{task_id}_{trajectory name}_step{k}``,
+    and under IP the trainer routes a sample to the adapter of its role, the name with trailing
+    digits stripped. With ``separate_vote_groups=True`` the voters are named
+    ``generator0 .. generator{N-1}``, so each voter forms its own group of ``rollout.n``
+    samples per problem; with ``False`` every voter is named ``generator``, so all voters form
+    one pooled group of ``n_votes * rollout.n`` samples. Both namings map to the same
+    ``generator`` adapter and the same ``agent_name`` at inference; only the advantage groups
+    differ. The default (True) is the Math behaviour; the Code binding defaults to False.
+
     Example:
         class MathVotingWorkflow(VotingWorkflow):
             def build_generator_prompt(self, task):
@@ -59,6 +69,7 @@ class VotingWorkflow(MultiAgentWorkflow):
         rollout_engine: RolloutEngine,
         n_votes: int = 3,
         use_final_outcome_reward: bool = False,
+        separate_vote_groups: bool = True,
         **kwargs,
     ):
         """Initialize the VotingWorkflow.
@@ -68,11 +79,15 @@ class VotingWorkflow(MultiAgentWorkflow):
             n_votes: Number of parallel generation attempts
             use_final_outcome_reward: If True, assign the final outcome reward to
                 ALL trajectories in the episode.
+            separate_vote_groups: If True, voter trajectories are named
+                ``generator{vote_index}`` (one GRPO group per voter); if False, all are
+                named ``generator`` (one pooled group). See the class docstring.
             **kwargs: Additional arguments passed to parent Workflow
         """
         super().__init__(rollout_engine, **kwargs)
         self.n_votes = n_votes
         self.use_final_outcome_reward = use_final_outcome_reward
+        self.separate_vote_groups = separate_vote_groups
 
     # ===== Abstract methods that subclasses MUST implement =====
 
@@ -185,6 +200,12 @@ class VotingWorkflow(MultiAgentWorkflow):
 
     # ===== Core workflow implementation =====
 
+    def generator_trajectory_name(self, vote_index: int) -> str:
+        """Trajectory name of voter ``vote_index`` (see ``separate_vote_groups``)."""
+        if self.separate_vote_groups:
+            return f"{self.GENERATOR_NAME}{vote_index}"
+        return self.GENERATOR_NAME
+
     async def _generate_single(
         self,
         task: dict[str, Any],
@@ -215,7 +236,7 @@ class VotingWorkflow(MultiAgentWorkflow):
         response = self.extract_response(output)
 
         trajectory = Trajectory(
-            name=f"{self.GENERATOR_NAME}{vote_index}",  # Unique name per vote for separate GRPO groups
+            name=self.generator_trajectory_name(vote_index),
             steps=[
                 Step(
                     chat_completions=messages

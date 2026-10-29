@@ -23,6 +23,8 @@ from marl_workflows.recipes import (
 FIXTURES = Path(__file__).parent / "fixtures"
 MATH_REWARD = "marl_workflows.rewards.math_reward.math_reward_fn"
 UFOR = ("use_final_outcome_reward", True)
+MATH_VOTING = (("n_votes", 3), UFOR, ("separate_vote_groups", True))
+CODE_VOTING = (("n_votes", 3), UFOR, ("separate_vote_groups", False))
 
 # Copy of DESIGN.md B1, checked value by value against fork dashboard/task_configs.py,
 # dashboard/launch_experiment.sh and examples/*/train_*.py.
@@ -34,13 +36,13 @@ EXPECTED = {
     ),
     ("math", "voting"): (
         "voting", None, "marl_workflows.workflows.math.voting.VotingMathWorkflow",
-        ("generator", "aggregator"), (False, True), (("n_votes", 3), UFOR), (20480, 5120), (25600, 8192),
-        (("n_votes", 3), UFOR), (), ("generator",),
+        ("generator", "aggregator"), (False, True), MATH_VOTING, (20480, 5120), (25600, 8192),
+        MATH_VOTING, (), ("generator",),
     ),
     ("math", "voting_prompt_het"): (
         "voting", "prompt_het", "marl_workflows.workflows.math.voting_prompt_het.VotingMathPromptHetWorkflow",
-        ("generator", "aggregator"), (False, True), (("n_votes", 3), UFOR), (20480, 5120), (25600, 8192),
-        (("n_votes", 3), UFOR), (), ("generator",),
+        ("generator", "aggregator"), (False, True), MATH_VOTING, (20480, 5120), (25600, 8192),
+        MATH_VOTING, (), ("generator",),
     ),
     ("math", "evaluator_optimizer"): (
         "evaluator_optimizer", None, "marl_workflows.workflows.math.evaluator_optimizer.EvaluatorOptimizerMathWorkflow",
@@ -71,8 +73,8 @@ EXPECTED = {
     ),
     ("deepcoder", "voting"): (
         "voting", None, "marl_workflows.workflows.code.voting.DeepcodeVotingWorkflow",
-        ("generator", "aggregator"), (False, True), (("n_votes", 3), UFOR), (10240, 2048), (20480, 5120),
-        (("n_votes", 3), UFOR), (), ("generator",),
+        ("generator", "aggregator"), (False, True), CODE_VOTING, (10240, 2048), (20480, 5120),
+        CODE_VOTING, (), ("generator",),
     ),
     ("deepcoder", "evaluator_optimizer"): (
         "evaluator_optimizer", None,
@@ -225,9 +227,21 @@ def test_infer_task() -> None:
 
 def test_build_workflow_args_defaults_and_overrides() -> None:
     code_voting = RECIPES[("deepcoder", "voting")]
-    assert build_workflow_args(code_voting, None) == {"n_votes": 3, "use_final_outcome_reward": True}
+    assert build_workflow_args(code_voting, None) == {
+        "n_votes": 3,
+        "use_final_outcome_reward": True,
+        "separate_vote_groups": False,
+    }
     cfg = {"rllm": {"workflow": {"n_votes": 5, "use_final_outcome_reward": False, "unrelated": 1}}}
-    assert build_workflow_args(code_voting, cfg) == {"n_votes": 5, "use_final_outcome_reward": False}
+    assert build_workflow_args(code_voting, cfg) == {
+        "n_votes": 5,
+        "use_final_outcome_reward": False,
+        "separate_vote_groups": False,
+    }
+    cfg = {"rllm": {"workflow": {"separate_vote_groups": True}}}
+    assert build_workflow_args(code_voting, cfg)["separate_vote_groups"] is True
+    math_voting = RECIPES[("math", "voting")]
+    assert build_workflow_args(math_voting, None)["separate_vote_groups"] is True
 
 
 def test_build_workflow_args_with_omegaconf() -> None:

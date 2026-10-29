@@ -6,6 +6,7 @@ Also checks that every class path in ``marl_workflows.recipes.RECIPES`` resolves
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from typing import Any
 
@@ -176,6 +177,33 @@ async def test_voting_broadcast_of_wrong_selection() -> None:
     # The broadcast reward gives correct voters 0 as well.
     assert _rewards(episode) == [0.0, 0.0, 0.0, 0.0]
     assert episode.metrics["any_correct"] == 1
+
+
+def _without_names(episode: Episode) -> dict[str, Any]:
+    """The episode as plain data, without trajectory names and the random trajectory uids."""
+    data = dataclasses.asdict(episode)
+    for traj in data["trajectories"]:
+        del traj["uid"], traj["name"]
+    return data
+
+
+@pytest.mark.parametrize("workflow", ["voting", "voting_prompt_het"])
+async def test_voting_separate_vote_groups(workflow: str) -> None:
+    """Math default: one GRPO group per voter; the flag changes the voter names and nothing else."""
+    script = {"generator": [WRONG, RIGHT, UNBOXED], "aggregator": "I pick \\boxed{2}"}
+    episodes, engines = {}, {}
+    for separate in (True, False):
+        engines[separate] = FakeRolloutEngine(dict(script))
+        overrides = {} if separate else {"separate_vote_groups": False}
+        wf = _build("math", workflow, engines[separate], **overrides)
+        assert wf.separate_vote_groups is separate
+        episodes[separate] = await wf.run(_task(), UID)
+        _check_contract("math", workflow, episodes[separate], engines[separate])
+    assert _names(episodes[True]) == ["generator0", "generator1", "generator2", "aggregator"]
+    assert _names(episodes[False]) == ["generator", "generator", "generator", "aggregator"]
+    assert _without_names(episodes[True]) == _without_names(episodes[False])
+    calls = {k: [(c.messages, c.kwargs) for c in e.calls] for k, e in engines.items()}
+    assert calls[True] == calls[False]
 
 
 def test_voting_aggregator_parsing() -> None:

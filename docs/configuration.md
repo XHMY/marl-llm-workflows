@@ -44,7 +44,6 @@ Read by the recipes with a default; pass them with `+` except `use_final_outcome
 |---|---|---|---|
 | `rllm.workflow.use_final_outcome_reward` | `true` | all multi-agent workflows | Every role is rewarded with the episode outcome. `false`: each role is rewarded for its own output (per-role correctness). |
 | `+rllm.workflow.n_votes` | 3 | voting, voting_v2, voting_prompt_het | Number of voters per problem. |
-| `+rllm.workflow.separate_vote_groups` | `true` (Math), `false` (Code) | voting, voting_prompt_het | One GRPO advantage group per voter (`true`) or one pooled group for all voters (`false`); see Voting advantage groups. |
 | `+rllm.workflow.max_iterations` | 3 (Math), 2 (Code) | evaluator_optimizer | Maximum generator attempts per problem. |
 | `+rllm.workflow.max_subtasks` | 3 | orchestrator_workers_propose | Number of workers the orchestrator assigns. |
 | `+rllm.workflow.use_rubric_reward` | `false` | voting_v2 | Reward each voter with a rubric score instead of the outcome. |
@@ -121,17 +120,12 @@ limit was tens of MB.
 
 ## Voting advantage groups
 
-rLLM forms the GRPO advantage group of a sample from its problem and its trajectory name, so the
-names the Voting workflow gives its voters decide the groups. With
-`+rllm.workflow.separate_vote_groups=true` the voters are named `generator0`, `generator1`,
-`generator2`, and each voter's `rollout.n` samples of a problem form their own group; with `false`
-all voters are named `generator` and the `n_votes × rollout.n` samples form one pooled group. The
-role, and under IP the adapter, is the name without trailing digits, so both settings train the
-same `generator` adapter and change nothing else in the episode. The default is `true` for Math
-(`voting`, `voting_prompt_het`) and `false` for Code (`voting`), as in the paper: its Math Voting
-runs used separate groups and its Code Voting runs used one pooled group. `voting_v2` gives each
-voter its own role (`voterA`, `voterB`, `voterC`), so it always has one group per voter and does
-not read this key.
+The Voting workflows (`voting`, `voting_prompt_het`) name their voters `generator0`, `generator1`,
+`generator2` on both tasks, so each voter's `rollout.n` samples of a problem form their own GRPO
+group, and all voters train the one `generator` adapter (the role is the name without trailing
+digits). The paper's Code Voting runs named every voter `generator`, one pooled group of
+`n_votes × rollout.n` samples; under the broadcast reward this is equivalent up to the constant
+advantage factor sqrt(3(n-1)/(3n-1)) = 0.9555 for n = 8 (`tests/test_vote_grouping_advantages.py`).
 
 ## Environment variables
 

@@ -11,8 +11,8 @@
 #
 # Every value below is copied from the fork's yaml unless marked NEW or CHANGED.
 # Workflow-specific leaves (n_votes, max_iterations, max_subtasks, n_virtual_generators,
-# use_rubric_reward, voter_names, separate_vote_groups) are not declared: command lines pass
-# them with "+", and the recipes read them with .get(). The per-role trainer options are declared as empty parent
+# use_rubric_reward, voter_names) are not declared: command lines pass them with "+", and the
+# recipes read them with .get(). The per-role trainer options are declared as empty parent
 # dicts only, so the paper's "+trainer.x.y=v" overrides keep working verbatim (Hydra rejects
 # "+key=v" when the key already exists).
 

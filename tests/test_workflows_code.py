@@ -7,8 +7,8 @@ correct iff it contains ``PASS``; it runs through ``run_in_code_executor`` on a
 
 from __future__ import annotations
 
-import dataclasses
 import importlib
+import inspect
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -25,6 +25,7 @@ from marl_workflows.workflows.code.evaluator_optimizer import DeepcodeEvaluatorO
 from marl_workflows.workflows.code.single_agent import SingleAgentDeepcodeWorkflow
 from marl_workflows.workflows.code.voting import DeepcodeVotingWorkflow
 from marl_workflows.workflows.code.voting_v2 import DeepcodeVotingV2Workflow
+from marl_workflows.workflows.voting import VotingWorkflow
 
 pytestmark = pytest.mark.stack
 
@@ -85,14 +86,6 @@ def _rewards(episode: Episode) -> list[float]:
     return [t.reward for t in episode.trajectories]
 
 
-def _without_names(episode: Episode) -> dict[str, Any]:
-    """The episode as plain data, without trajectory names and the random trajectory uids."""
-    data = dataclasses.asdict(episode)
-    for traj in data["trajectories"]:
-        del traj["uid"], traj["name"]
-    return data
-
-
 def _check_contract(workflow: str, episode: Episode, engine: FakeRolloutEngine) -> None:
     recipe = get_recipe("deepcoder", workflow)
     for traj in episode.trajectories:
@@ -127,13 +120,13 @@ async def test_run_in_code_executor_requires_an_executor(reward_calls) -> None:
 
 
 @pytest.mark.parametrize("ufor", [True, False])
-async def test_voting_pooled_names_and_unconditional_broadcast(executor, reward_calls, ufor: bool) -> None:
+async def test_voting_names_and_unconditional_broadcast(executor, reward_calls, ufor: bool) -> None:
     engine = FakeRolloutEngine({"generator": [FAIL, PASS, NO_CODE], "aggregator": "\\boxed{2}"})
     wf = _build("voting", engine, executor, use_final_outcome_reward=ufor)
     episode = await wf.run(_task(), UID)
     _check_contract("voting", episode, engine)
-    # All voters share one trajectory name (one pooled GRPO group).
-    assert _names(episode) == ["generator", "generator", "generator", "aggregator"]
+    # One trajectory name, hence one GRPO group, per voter.
+    assert _names(episode) == ["generator0", "generator1", "generator2", "aggregator"]
     # No sticky-session id on any Code Voting call.
     assert all("application_id" not in c.kwargs for c in engine.calls)
     # Only the selected solution is tested.
@@ -149,22 +142,21 @@ async def test_voting_pooled_names_and_unconditional_broadcast(executor, reward_
     }
 
 
-async def test_voting_separate_vote_groups(executor, reward_calls) -> None:
-    """Code default: one pooled GRPO group; the flag changes the voter names and nothing else."""
+async def test_voting_has_no_pooled_group_option(executor, reward_calls) -> None:
+    """Voters are always ``generator0/1/2``; a ``separate_vote_groups`` kwarg is not a parameter.
+
+    Like any unknown kwarg it is absorbed by the upstream ``Workflow`` base and changes nothing.
+    """
+    assert "separate_vote_groups" not in inspect.signature(DeepcodeVotingWorkflow).parameters
+    assert "separate_vote_groups" not in inspect.signature(VotingWorkflow).parameters
     script = {"generator": [FAIL, PASS, NO_CODE], "aggregator": "\\boxed{2}"}
-    episodes, engines = {}, {}
-    for separate in (False, True):
-        engines[separate] = FakeRolloutEngine(dict(script))
-        overrides = {"separate_vote_groups": True} if separate else {}
-        wf = _build("voting", engines[separate], executor, **overrides)
-        assert wf.separate_vote_groups is separate
-        episodes[separate] = await wf.run(_task(), UID)
-        _check_contract("voting", episodes[separate], engines[separate])
-    assert _names(episodes[False]) == ["generator", "generator", "generator", "aggregator"]
-    assert _names(episodes[True]) == ["generator0", "generator1", "generator2", "aggregator"]
-    assert _without_names(episodes[False]) == _without_names(episodes[True])
-    calls = {k: [(c.messages, c.kwargs) for c in e.calls] for k, e in engines.items()}
-    assert calls[False] == calls[True]
+    for overrides in ({}, {"separate_vote_groups": False}):
+        engine = FakeRolloutEngine(dict(script))
+        wf = _build("voting", engine, executor, **overrides)
+        assert not hasattr(wf, "separate_vote_groups")
+        episode = await wf.run(_task(), UID)
+        _check_contract("voting", episode, engine)
+        assert _names(episode) == ["generator0", "generator1", "generator2", "aggregator"]
     assert reward_calls == [PASS, PASS]
 
 

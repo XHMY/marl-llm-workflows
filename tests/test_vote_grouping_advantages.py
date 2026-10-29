@@ -1,13 +1,14 @@
 """Per-voter vs pooled GRPO groups for Voting under the broadcast episode reward.
 
 Every Voting run broadcasts the episode outcome to each voter, so the three voters of an
-episode carry identical rewards. rLLM groups a sample by ``{task_id}_{trajectory name}_step{k}``:
-with ``separate_vote_groups=True`` the voters are ``generator0/1/2`` (one group of ``rollout.n``
-per voter), with ``False`` they are all ``generator`` (one pooled group of ``3 * rollout.n``).
-With identical voter rewards both groupings give the same group mean, hence the same
-zero-advantage mask, and advantages that differ only by the ratio of the unbiased stds,
-``sqrt(3 (n - 1) / (3 n - 1))`` (``sqrt(21 / 23) ~ 0.9555`` for ``n = 8``). With per-voter
-rewards the groupings differ, including which samples get zero advantage.
+episode carry identical rewards. rLLM groups a sample by ``{task_id}_{trajectory name}_step{k}``.
+The workflow names the voters ``generator0/1/2`` (one group of ``rollout.n`` per voter); the
+paper's Code Voting runs named them all ``generator`` (one pooled group of ``3 * rollout.n``),
+built locally below since the workflow no longer has that option. With identical voter rewards
+both groupings give the same group mean, hence the same zero-advantage mask, and advantages that
+differ only by the ratio of the unbiased stds, ``sqrt(3 (n - 1) / (3 n - 1))``
+(``sqrt(21 / 23) ~ 0.9555`` for ``n = 8``), which is why the pooled variant was dropped. With
+per-voter rewards the groupings differ, including which samples get zero advantage.
 """
 
 from __future__ import annotations
@@ -29,7 +30,10 @@ EPS = 1e-6
 
 
 def _voter_names(separate: bool) -> list[str]:
-    owner = SimpleNamespace(separate_vote_groups=separate, GENERATOR_NAME=VotingWorkflow.GENERATOR_NAME)
+    """Per-voter names from the workflow (``separate``) or the pooled naming of the paper's Code runs."""
+    if not separate:
+        return [VotingWorkflow.GENERATOR_NAME] * N_VOTES
+    owner = SimpleNamespace(GENERATOR_NAME=VotingWorkflow.GENERATOR_NAME)
     return [VotingWorkflow.generator_trajectory_name(owner, i) for i in range(N_VOTES)]
 
 

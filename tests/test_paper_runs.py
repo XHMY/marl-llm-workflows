@@ -221,17 +221,15 @@ def _without(overrides: list[str], *keys: str) -> list[str]:
 
 def test_paper_run_name_suffix_and_override(capsys: pytest.CaptureFixture[str]) -> None:
     reference = _paper_run_overrides(capsys)
-    derived = _paper_run_overrides(
-        capsys, "--name-suffix", "pooled_groups", "+rllm.workflow.separate_vote_groups=false"
-    )
+    derived = _paper_run_overrides(capsys, "--name-suffix", "five_votes", "+rllm.workflow.n_votes=5")
     assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math" in reference
-    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math-pooled_groups" in derived
-    assert "+rllm.workflow.separate_vote_groups=false" in derived
+    assert "trainer.experiment_name=voting-qwen3_1.7b-multi_lora-math-five_votes" in derived
+    assert "+rllm.workflow.n_votes=3" in reference
+    assert "+rllm.workflow.n_votes=5" in derived and "+rllm.workflow.n_votes=3" not in derived
     assert f"trainer.project_name={launch.PAPER_PROJECT}" in derived
     # Every other key of the paper run is unchanged and in the same order.
-    assert _without(derived, "trainer.experiment_name", "rllm.workflow.separate_vote_groups") == _without(
-        reference, "trainer.experiment_name"
-    )
+    keys = ("trainer.experiment_name", "rllm.workflow.n_votes")
+    assert _without(derived, *keys) == _without(reference, *keys)
 
 
 def test_paper_run_experiment_name_replaces_the_name(capsys: pytest.CaptureFixture[str]) -> None:
@@ -257,7 +255,7 @@ def test_paper_run_processed_logprobs(capsys: pytest.CaptureFixture[str]) -> Non
 @pytest.mark.parametrize(
     "args",
     [
-        ["+rllm.workflow.separate_vote_groups=false"],
+        ["+rllm.workflow.n_votes=5"],
         ["--processed-logprobs"],
         ["--experiment-name", "voting-qwen3_1.7b-multi_lora-math", "trainer.save_freq=5"],
         [

@@ -6,7 +6,6 @@ Also checks that every class path in ``marl_workflows.recipes.RECIPES`` resolves
 
 from __future__ import annotations
 
-import dataclasses
 import inspect
 from typing import Any
 
@@ -25,6 +24,7 @@ from marl_workflows.workflows.math.single_agent import SingleAgentMathWorkflow
 from marl_workflows.workflows.math.voting import VotingMathWorkflow
 from marl_workflows.workflows.math.voting_prompt_het import STYLE_SUFFIXES, VotingMathPromptHetWorkflow
 from marl_workflows.workflows.math.voting_v2 import VotingV2MathWorkflow
+from marl_workflows.workflows.voting import VotingWorkflow
 
 pytestmark = pytest.mark.stack
 
@@ -179,31 +179,23 @@ async def test_voting_broadcast_of_wrong_selection() -> None:
     assert episode.metrics["any_correct"] == 1
 
 
-def _without_names(episode: Episode) -> dict[str, Any]:
-    """The episode as plain data, without trajectory names and the random trajectory uids."""
-    data = dataclasses.asdict(episode)
-    for traj in data["trajectories"]:
-        del traj["uid"], traj["name"]
-    return data
-
-
 @pytest.mark.parametrize("workflow", ["voting", "voting_prompt_het"])
-async def test_voting_separate_vote_groups(workflow: str) -> None:
-    """Math default: one GRPO group per voter; the flag changes the voter names and nothing else."""
+async def test_voting_has_no_pooled_group_option(workflow: str) -> None:
+    """Voters are always ``generator0/1/2``; a ``separate_vote_groups`` kwarg is not a parameter.
+
+    Like any unknown kwarg it is absorbed by the upstream ``Workflow`` base and changes nothing.
+    """
+    cls = load_object(get_recipe("math", workflow).workflow_cls)
+    assert "separate_vote_groups" not in inspect.signature(cls).parameters
+    assert "separate_vote_groups" not in inspect.signature(VotingWorkflow).parameters
     script = {"generator": [WRONG, RIGHT, UNBOXED], "aggregator": "I pick \\boxed{2}"}
-    episodes, engines = {}, {}
-    for separate in (True, False):
-        engines[separate] = FakeRolloutEngine(dict(script))
-        overrides = {} if separate else {"separate_vote_groups": False}
-        wf = _build("math", workflow, engines[separate], **overrides)
-        assert wf.separate_vote_groups is separate
-        episodes[separate] = await wf.run(_task(), UID)
-        _check_contract("math", workflow, episodes[separate], engines[separate])
-    assert _names(episodes[True]) == ["generator0", "generator1", "generator2", "aggregator"]
-    assert _names(episodes[False]) == ["generator", "generator", "generator", "aggregator"]
-    assert _without_names(episodes[True]) == _without_names(episodes[False])
-    calls = {k: [(c.messages, c.kwargs) for c in e.calls] for k, e in engines.items()}
-    assert calls[True] == calls[False]
+    for overrides in ({}, {"separate_vote_groups": False}):
+        engine = FakeRolloutEngine(dict(script))
+        wf = _build("math", workflow, engine, **overrides)
+        assert not hasattr(wf, "separate_vote_groups")
+        episode = await wf.run(_task(), UID)
+        _check_contract("math", workflow, episode, engine)
+        assert _names(episode) == ["generator0", "generator1", "generator2", "aggregator"]
 
 
 def test_voting_aggregator_parsing() -> None:

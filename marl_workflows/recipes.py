@@ -100,10 +100,7 @@ _IP_SP = (False, True)
 _IP_ONLY = (False,)
 
 _UFOR = ("use_final_outcome_reward", True)
-# separate_vote_groups: voter trajectory names generator0/1/2 (one GRPO group per voter, the
-# paper's Math runs) or generator x3 (one pooled group, the paper's Code runs).
-_MATH_VOTING_PARAMS = (("n_votes", 3), _UFOR, ("separate_vote_groups", True))
-_CODE_VOTING_PARAMS = (("n_votes", 3), _UFOR, ("separate_vote_groups", False))
+_VOTING_PARAMS = (("n_votes", 3), _UFOR)
 # Training defaults of the voting_v2 entry scripts; the yaml declares use_final_outcome_reward=True.
 _VOTING_V2_PARAMS = (("n_votes", 3), ("voter_names", None), _UFOR, ("use_rubric_reward", False))
 # dashboard/task_configs.py workflow_params, which the evaluator passes to voting_v2.
@@ -159,10 +156,10 @@ _RECIPE_LIST: tuple[Recipe, ...] = (
         workflow_cls=f"{_MATH}.voting.VotingMathWorkflow",
         agent_names=("generator", "aggregator"),
         allowed_share_policy=_IP_SP,
-        params=_MATH_VOTING_PARAMS,
+        params=_VOTING_PARAMS,
         train_lengths=(20480, 5120),
         eval_lengths=(25600, 8192),
-        eval_params=_MATH_VOTING_PARAMS,
+        eval_params=_VOTING_PARAMS,
     ),
     _math(
         "voting_prompt_het",
@@ -171,10 +168,10 @@ _RECIPE_LIST: tuple[Recipe, ...] = (
         workflow_cls=f"{_MATH}.voting_prompt_het.VotingMathPromptHetWorkflow",
         agent_names=("generator", "aggregator"),
         allowed_share_policy=_IP_SP,
-        params=_MATH_VOTING_PARAMS,
+        params=_VOTING_PARAMS,
         train_lengths=(20480, 5120),
         eval_lengths=(25600, 8192),
-        eval_params=_MATH_VOTING_PARAMS,
+        eval_params=_VOTING_PARAMS,
     ),
     _math(
         "evaluator_optimizer",
@@ -248,10 +245,10 @@ _RECIPE_LIST: tuple[Recipe, ...] = (
         workflow_cls=f"{_CODE}.voting.DeepcodeVotingWorkflow",
         agent_names=("generator", "aggregator"),
         allowed_share_policy=_IP_SP,
-        params=_CODE_VOTING_PARAMS,
+        params=_VOTING_PARAMS,
         train_lengths=(10240, 2048),
         eval_lengths=(20480, 5120),
-        eval_params=_CODE_VOTING_PARAMS,
+        eval_params=_VOTING_PARAMS,
     ),
     _code(
         "evaluator_optimizer",

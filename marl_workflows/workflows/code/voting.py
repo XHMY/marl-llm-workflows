@@ -4,17 +4,16 @@ This module provides a concrete implementation of VotingWorkflow
 for code generation with parallel generation and aggregation: generate N solutions,
 aggregate, return result.
 
-Unlike Math Voting, ``separate_vote_groups`` defaults to False (all generators share the
-trajectory name ``generator``: one pooled GRPO group), no ``application_id`` is sent, only the
-selected solution is tested, and the final outcome reward is broadcast to every trajectory
-unconditionally.
+As in Math Voting, voters are named ``generator0/1/2`` (one GRPO group per voter). No
+``application_id`` is sent, only the selected solution is tested, and the final outcome reward is
+broadcast to every trajectory unconditionally. The paper's Code runs pooled the voters into one
+``generator`` group, which under the broadcast reward differs only by a constant advantage scale.
 
 Ported from the single-pass path of fork ``examples/deepcoder/deepcoder_voting_workflow.py``
 (:1-357); only the imports, prompt loading (``prompts`` dict or ``load_prompts``, no
 ``prompt_file``), the broadcast helper and the removed test loop differ. The fork's
 ``_generate_single_with_feedback`` (always called without feedback) equals the base class's
-``_generate_single`` without ``uid`` except for the trajectory name, so the base method is used
-with ``separate_vote_groups=False``.
+``_generate_single`` without ``uid`` except for the trajectory name, so the base method is used.
 """
 
 import asyncio
@@ -56,7 +55,6 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
         max_tests_to_show: int = 3,
         public_test_only: bool = False,
         use_final_outcome_reward: bool = False,
-        separate_vote_groups: bool = False,
         **kwargs,
     ):
         """Initialize the code voting workflow.
@@ -72,9 +70,6 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
             public_test_only: Kept for config compatibility; unused
             use_final_outcome_reward: Stored for compatibility; the single pass broadcasts
                 the final outcome reward regardless
-            separate_vote_groups: If False (default, as in the paper's Code runs), every voter
-                trajectory is named ``generator`` (one pooled GRPO group); if True, voters are
-                named ``generator{vote_index}`` (one group per voter)
             **kwargs: Additional arguments passed to parent workflow
         """
         reject_test_loop(enable_test_loop)
@@ -82,7 +77,6 @@ class DeepcodeVotingWorkflow(VotingWorkflow):
             rollout_engine=rollout_engine,
             n_votes=n_votes,
             use_final_outcome_reward=use_final_outcome_reward,
-            separate_vote_groups=separate_vote_groups,
             **kwargs,
         )
         self._prompts = prompts

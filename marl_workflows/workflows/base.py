@@ -18,9 +18,9 @@ Every workflow builds ``Trajectory`` objects and calls the rollout engine with a
 Names per workflow (C4), as trajectory names -> agent_name values:
 
 * single agent: ``generator`` -> ``generator``.
-* Math Voting: ``generator0/1/2`` (one GRPO group per voter index) and ``aggregator`` ->
-  ``generator``, ``aggregator``.
-* Code Voting: ``generator`` three times (one pooled GRPO group) and ``aggregator`` -> same.
+* Voting (Math and Code): ``generator0/1/2`` (one GRPO group per voter index) and
+  ``aggregator`` -> ``generator``, ``aggregator``. The paper's Code runs named every voter
+  ``generator`` (one pooled group).
 * Eval-Opt: ``generator`` (every turn is its own trajectory) and ``evaluator`` -> same.
 * Orch-Workers: ``orchestrator``, ``worker`` (all workers) and ``synthesizer`` -> same.
 * voting_v2: ``voterA/B/C`` and ``aggregator`` -> same.

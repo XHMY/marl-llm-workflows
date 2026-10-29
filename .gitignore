@@ -15,5 +15,5 @@ logs/
 wandb/
 eval_results*.jsonl
 evaluation_trajectories/
-data_cache/
+data_cache*/
 *.sbatch.generated

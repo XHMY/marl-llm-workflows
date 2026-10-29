@@ -37,7 +37,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   lm7qcvrf:
     cell: Voting-IP-1.7B-Math
@@ -54,7 +55,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   nrg6etac:
     cell: Voting-SP-1.7B-Math
@@ -106,6 +108,7 @@ runs:
     lr_warmup_steps: 0
     resumed_from: null
     overrides:
+    - actor_rollout_ref.rollout.gpu_memory_utilization=0.7
     - +trainer.wallclock_stop.enable=true
     notes: []
   we11anum:
@@ -208,7 +211,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   6ul370k4:
     cell: Orch-Workers-IP-0.6B-Math
@@ -225,7 +229,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   kxgr728h:
     cell: Orch-Workers-SP-0.6B-Math
@@ -242,7 +247,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   p0i56b22:
     cell: Orch-Workers-IP-1.7B-Math
@@ -310,7 +316,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   wycqvb2m:
     cell: SA-RL-0.6B-Math
@@ -328,6 +335,7 @@ runs:
     lr_warmup_steps: 0
     resumed_from: null
     overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     - trainer.save_freq=10
     notes: []
   ubb8icwa:
@@ -346,6 +354,7 @@ runs:
     lr_warmup_steps: 0
     resumed_from: null
     overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     - trainer.save_freq=10
     logged_experiment_name: qwen3_1.7b-math_single_agent-length5120
     notes:
@@ -366,6 +375,7 @@ runs:
     lr_warmup_steps: 0
     resumed_from: null
     overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     - trainer.save_freq=10
     logged_experiment_name: single_agent-qwen3_4b-math
     notes:
@@ -545,7 +555,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   vu7keu40:
     cell: Eval-Opt-IP-4B-Code
@@ -718,6 +729,7 @@ runs:
     lr_warmup_steps: 0
     resumed_from: null
     overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     - trainer.save_freq=10
     notes: []
   zs6bz5uf:
@@ -735,7 +747,8 @@ runs:
     total_training_steps: 300
     lr_warmup_steps: 0
     resumed_from: null
-    overrides: []
+    overrides:
+    - rllm.workflow.n_parallel_tasks=2048
     notes: []
   lottt3pm:
     cell: control:per_voter_reward

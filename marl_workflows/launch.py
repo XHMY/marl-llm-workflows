@@ -15,6 +15,7 @@ earlier prefix is kept (keys absent from the Hydra yaml need ``+``).
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import shlex
@@ -87,7 +88,8 @@ PPO_MAX_TOKEN_LEN: dict[tuple[str, str], int] = {
 }
 
 # Per-GPU CPU and host-memory defaults when the SLURM conf gives none. Code needs many CPUs
-# for the code-execution pool (code_executor_workers = n_gpus * cpus_per_gpu).
+# for the code-execution pool (code_executor_workers = n_gpus * cpus_per_gpu; a paper run that pins
+# the pool size gets cpus_per_gpu = ceil(code_executor_workers / n_gpus) instead).
 _RESOURCE_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
     ("math", "large"): (8, "64G"),
     ("math", "small"): (8, "48G"),
@@ -583,7 +585,12 @@ def spec_from_paper_run(run_id: str, runs: Mapping[str, Mapping[str, Any]] | Non
         lr_warmup_steps=e.get("lr_warmup_steps"),
         paper_overrides=list(e.get("overrides") or []),
     )
-    return replace(spec, **changes) if changes else spec
+    spec = replace(spec, **changes) if changes else spec
+    if spec.task == "deepcoder" and spec.code_executor_workers and spec.cpus_per_gpu is None:
+        # The fork sized the code-execution pool to the job's CPUs; a pinned pool size sets the CPUs.
+        n_gpus = spec.n_gpus or 2
+        spec = replace(spec, cpus_per_gpu=math.ceil(spec.code_executor_workers / n_gpus))
+    return spec
 
 
 # --------------------------------------------------------------------------------------
@@ -766,7 +773,6 @@ def _spec_from_args(args: argparse.Namespace) -> LaunchSpec:
     extra = [tok for chunk in args.extra for tok in shlex.split(chunk)] + list(args.overrides)
     if args.paper_run:
         runs = load_paper_runs(args.paper_runs_file)
-        spec = spec_from_paper_run(args.paper_run, runs)
         changes: dict[str, Any] = {"extra": extra}
         for attr, value in (
             ("n_gpus", args.gpus),
@@ -779,7 +785,7 @@ def _spec_from_args(args: argparse.Namespace) -> LaunchSpec:
         if args.gpu_type:
             changes["gpu_type"] = normalize_gpu_type(args.gpu_type)
             changes["gpu_type_explicit"] = True
-        return replace(spec, **changes)
+        return spec_from_paper_run(args.paper_run, runs, **changes)
     missing = [f"--{n}" for n in ("task", "workflow", "policy", "scale") if getattr(args, n) is None]
     if missing:
         raise SystemExit(f"launch.py: {', '.join(missing)} required (or --paper-run)")

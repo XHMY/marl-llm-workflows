@@ -32,6 +32,17 @@ class MultiLoRAServerManager(AsyncLLMServerManager):
     The sticky server choice still uses the caller's ``request_id`` (prefix caching across turns).
     """
 
+    @classmethod
+    def from_manager(cls, manager: AsyncLLMServerManager) -> MultiLoRAServerManager:
+        """Take over an already-built upstream manager's state (server order, load heap, sticky cache).
+
+        Calling the constructor again would ``random.shuffle`` ``server_handles`` a second time; the research
+        fork built one manager, so the engine adopts the one upstream ``VerlEngine.__init__`` built.
+        """
+        new = cls.__new__(cls)
+        new.__dict__.update(vars(manager))
+        return new
+
     @rollout_trace_op
     async def generate(
         self,
@@ -63,7 +74,7 @@ class MultiLoRAVerlEngine(VerlEngine):
 
     def __init__(self, config: Any, rollout_manager: Any, tokenizer: Any, processor: Any = None, **kwargs: Any) -> None:
         super().__init__(config, rollout_manager, tokenizer, processor=processor, **kwargs)
-        self.server_manager = MultiLoRAServerManager(config, server_handles=rollout_manager.server_handles)
+        self.server_manager = MultiLoRAServerManager.from_manager(self.server_manager)
         self.agent_names: list[str] = list(config.trainer.get("agent_names", None) or [])
         self.share_policy: bool = bool(config.trainer.get("share_policy", False))
         self.strict: bool = contracts.lora_strict_from_env()

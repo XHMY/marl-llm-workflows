@@ -88,6 +88,8 @@ TRACKED_DEFAULTS: dict[str, tuple[str, Any]] = {
     "actor_rollout_ref.actor.kl_loss_type": ("", "low_var_kl"),
     "actor_rollout_ref.rollout.n": ("", 8),
     "actor_rollout_ref.rollout.temperature": ("", 0.7),
+    "actor_rollout_ref.rollout.gpu_memory_utilization": ("", 0.85),
+    "rllm.workflow.n_parallel_tasks": ("", 512),
     "trainer.save_freq": ("", 5),
     "trainer.test_freq": ("", 10),
     "trainer.wallclock_stop.enable": ("+", None),

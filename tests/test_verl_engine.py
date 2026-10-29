@@ -16,6 +16,7 @@ pytestmark = pytest.mark.stack
 pytest.importorskip("rllm.engine.rollout.verl_engine")
 
 from rllm.engine.rollout.verl_engine import VerlEngine  # noqa: E402
+from verl.experimental.agent_loop.agent_loop import AsyncLLMServerManager  # noqa: E402
 from verl.workers.rollout.replica import TokenOutput  # noqa: E402
 
 from marl_workflows import contracts  # noqa: E402
@@ -137,6 +138,7 @@ async def test_engine_sp_sends_no_id():
 def test_engine_init_reads_config_and_env(monkeypatch):
     def fake_init(self, config, rollout_manager, tokenizer, processor=None, **kwargs):
         self.config = config
+        self.server_manager = AsyncLLMServerManager(config, server_handles=rollout_manager.server_handles)
 
     config = OmegaConf.create({"trainer": {"agent_names": ROLES, "share_policy": False}})
     rollout_manager = SimpleNamespace(server_handles=[FakeServer("s0")])
@@ -149,3 +151,36 @@ def test_engine_init_reads_config_and_env(monkeypatch):
     assert isinstance(engine.server_manager, MultiLoRAServerManager)
     assert engine.agent_names == ROLES and engine.share_policy is False and engine.strict is True
     assert engine.lora_int_id_for("aggregator") == 124
+
+
+def test_engine_init_shuffles_server_handles_once():
+    """Upstream ``VerlEngine.__init__`` builds (and shuffles) one manager; the engine adopts it, as the fork did."""
+    config = OmegaConf.create(
+        {
+            "trainer": {"agent_names": ROLES, "share_policy": False},
+            "actor_rollout_ref": {
+                "rollout": {
+                    "name": "vllm",
+                    "do_sample": True,
+                    "temperature": 0.7,
+                    "top_k": -1,
+                    "top_p": 1.0,
+                    "val_kwargs": {"do_sample": True, "temperature": 0.6, "top_k": -1, "top_p": 0.95},
+                }
+            },
+            "data": {"max_prompt_length": 100, "max_response_length": 16},
+        }
+    )
+    servers = [FakeServer(f"s{i}") for i in range(4)]
+    rollout_manager = SimpleNamespace(server_handles=servers)
+    shuffles = []
+    with (
+        patch("verl.experimental.agent_loop.agent_loop.random.shuffle", side_effect=lambda x: shuffles.append(1)),
+        patch("rllm.engine.rollout.verl_engine.ChatTemplateParser.get_parser", return_value=FakeParser()),
+    ):
+        engine = MultiLoRAVerlEngine(config, rollout_manager, tokenizer=FakeTokenizer())
+    assert len(shuffles) == 1
+    manager = engine.server_manager
+    assert type(manager) is MultiLoRAServerManager
+    assert manager.server_handles is servers
+    assert sorted(id(e[1][1]) for e in manager.weighted_serveres) == sorted(id(s) for s in servers)

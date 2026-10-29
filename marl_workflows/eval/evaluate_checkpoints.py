@@ -721,7 +721,8 @@ def main(args: argparse.Namespace) -> list[EvalResult]:
                     engine.max_prompt_length = wf_lengths[0]
                 if wf_lengths and not user_max_tokens:
                     engine.max_response_length = wf_lengths[1]
-                engine.max_model_length = engine.max_prompt_length + engine.max_response_length - 1
+                    # Fork: recomputed only here, so --max-tokens keeps the engine's initial model length.
+                    engine.max_model_length = engine.max_prompt_length + engine.max_response_length - 1
                 n_parallel = args.n_parallel or compute_n_parallel(args.gpu_type, cp.model_size, cp.workflow_type)
                 try:
                     result = asyncio.run(

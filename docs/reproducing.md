@@ -63,8 +63,9 @@ python scripts/launch.py --paper-run lm7qcvrf --slurm-config configs/slurm/dgxh_
 ```
 
 `--paper-run` pins the experiment name, the wandb project of the paper runs
-(`rllm-workflow-MARL-v2`), the number of GPUs, the per-GPU token budget, the code-execution pool size,
-the number of training steps and the learning-rate warmup, plus any run-specific overrides. The values
+(`rllm-workflow-MARL-v2`), the number of GPUs, the per-GPU token budget, the code-execution pool size
+(the rendered SLURM job allocates at least one CPU per pool worker, as the original runs did), the
+number of training steps and the learning-rate warmup, plus any run-specific overrides. The values
 come from the logged configs of the original runs; the warmup comes from the logged learning-rate
 series (15 steps of linear warmup, or none), because the logged config of a resumed run can show a
 warmup the run never took. `tests/test_paper_runs.py` checks that the generated command equals the
@@ -130,6 +131,11 @@ records and is not edited by hand.
 | SA-RL-4B-Code | `--task deepcoder --workflow single_agent --policy ip --scale 4B` | `--paper-run zs6bz5uf` | 300 | 0 | 2 |
 
 Steps is the configured `trainer.total_training_steps`; the selected checkpoints are earlier.
+
+`Eval-Opt-IP-4B-Code` (`vu7keu40`) was trained with the per-test subprocess code executor
+(`max_concurrent_code_execs=32`, one process per test with its own CPU limit), which this package does not
+include. Its checkpoints can be evaluated like any other, but `--paper-run vu7keu40` retrains it with the
+process pool, so the retrained run is not an exact reproduction.
 
 ### Controls
 

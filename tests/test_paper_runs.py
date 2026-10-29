@@ -181,6 +181,26 @@ def test_paper_run_pins_steps_and_warmup(run_id: str, runs: dict[str, dict[str, 
     assert ov["actor_rollout_ref.actor.optim.lr_warmup_steps"] == str(runs[run_id]["lr_warmup_steps"])
 
 
+def test_code_runs_allocate_a_cpu_per_executor_worker(runs: dict[str, dict[str, Any]]) -> None:
+    """The fork sized the code-execution pool to the job's CPUs; the rendered job must not oversubscribe it."""
+    import re
+
+    confs = sorted((REPO / "configs" / "slurm").glob("*.conf"))
+    assert confs
+    checked = 0
+    for run_id, e in runs.items():
+        if e["task"] != "deepcoder":
+            continue
+        for conf in confs:
+            script = launch.render_sbatch(launch.spec_from_paper_run(run_id, runs), conf, root="/repo")
+            n_gpus = int(re.search(r"^#SBATCH --gres=gpu:(\d+)$", script, re.M).group(1))
+            cpus = int(re.search(r"^#SBATCH --cpus-per-gpu=(\d+)$", script, re.M).group(1))
+            workers = int(re.search(r"rllm\.workflow\.code_executor_workers=(\d+)", script).group(1))
+            assert n_gpus * cpus >= workers, f"{run_id} on {conf.name}: {n_gpus}x{cpus} CPUs < {workers} workers"
+            checked += 1
+    assert checked
+
+
 # --------------------------------------------------------------------------------------
 # Agreement with the logged wandb configs (fork cache)
 # --------------------------------------------------------------------------------------

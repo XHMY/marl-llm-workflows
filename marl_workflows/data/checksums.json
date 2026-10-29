@@ -1,0 +1,80 @@
+{
+  "_meta": {
+    "definition": "per row sha256(json.dumps([question, answer], ensure_ascii=False, separators=(',', ':'))), answer = ground_truth if present and not null else final_answer (str()); sha256_sorted = sha256 of the sorted row digests joined by newlines; sha256_ordered = same in file order",
+    "generated_from": "research fork rllm/data/datasets/{dapo_math,aime2025,aime2024,math500_answer,deepcoder_primeintellect}/*.parquet @f0240732 (python -m marl_workflows.data.prepare_dapo_math --write-checksums <dir>); smoke_math from fixtures/smoke_math.jsonl",
+    "generated_on": "2026-10-29"
+  },
+  "datasets": {
+    "aime2024": {
+      "test": {
+        "rows": 30,
+        "sha256_ordered": "5e2b75b1741db1d8d50ad9b1889172e86a9e8e70aacdd78adc60b27f8e378e01",
+        "sha256_sorted": "cddcd3ab587e2bc2571f47ec39f4585f8a82017ebd58fb5c825fe57dd72911e9"
+      }
+    },
+    "aime2025": {
+      "test": {
+        "rows": 30,
+        "sha256_ordered": "f8477f167203afd491b000b74841f37ddf5171ca9df944581182904ea0cf67c4",
+        "sha256_sorted": "ef0c29f1bd5d43a2aea2da3eb42123b40c0b62212f912c7f65ca54d3e820074e"
+      }
+    },
+    "dapo_math": {
+      "test": {
+        "rows": 1412,
+        "sha256_ordered": "957872e6cd7434bb8d1fa2c551f81e18b34874b11e3f62c732b633e942d8a6d4",
+        "sha256_sorted": "f35fc1eea779aac23433fbd3993620fb7678f9221f2f920d950df5e79d8adc1a"
+      },
+      "train": {
+        "rows": 12704,
+        "sha256_ordered": "a9d6bfe22e0b876f306b803772b1a09bc9e61326bda78628b1f12da82d0fff0f",
+        "sha256_sorted": "aa00726139e075f18f58315f70891a7ea2510bdb02cd941bcbfdf71f4decc7e5"
+      }
+    },
+    "deepcoder_primeintellect": {
+      "test": {
+        "rows": 1000,
+        "sha256_ordered": "a2e0f40cbb54066de72a139774943236e5aaa727830954546421d25fc4a14078",
+        "sha256_sorted": "7c9d6f3695dad830a2d7bfc035a6523f5a09a6d0bbc763d276c0dd2968ae43e0"
+      },
+      "train": {
+        "rows": 11957,
+        "sha256_ordered": "ce0e26e30c5ce7f2882c8ca4f116846c75a0ded985b517342852f1f16b8c0927",
+        "sha256_sorted": "ace5fce172d6f731fcc6941af5761bed57feffe38e60d69f4c0dc47ed3ff37ac"
+      }
+    },
+    "math500": {
+      "test": {
+        "rows": 474,
+        "sha256_ordered": "da809ccb3e7112017853b41cbf0f7329d8ff8f91afbf1b7171453488748da5df",
+        "sha256_sorted": "56f6228dfacbba36b2e7179e5ad5f6d30d1a1d4662ddf68ffb34f49a2896608d"
+      }
+    },
+    "smoke_math": {
+      "test": {
+        "rows": 8,
+        "sha256_ordered": "2f772c845e4a6f26279e2f3858c3482ad654cf24e29c5412278d140220c72a81",
+        "sha256_sorted": "5d01ca01771de49e8a707a831ae24349c3eea7194d7effb2ab4d5c0824386951"
+      },
+      "train": {
+        "rows": 32,
+        "sha256_ordered": "476a8ac4736517d1cf197326c3a8582fca00a7ddf95168adeb351ae1b87ed23c",
+        "sha256_sorted": "9059fdef0624dcbff69832b4e7fd85e70f0100b243fdf834b41d997bb47a9e3e"
+      }
+    }
+  },
+  "files": {
+    "deepcoder_passing_tests.json.gz": {
+      "passing_tests": 1180986,
+      "problems": 16252,
+      "problems_without_passing_test": 3295,
+      "sha256": "6ec5e65787d3ce003a174979da930a1be90ddb687a8f91feb239465d8b714f49",
+      "source": "research fork coding_dataset_filtering/runtime_results.json (measure_runtime.py, 10 s per test)",
+      "source_sha256": "82c015cd9d080e258319558f224db2491e2dadcbf0c217ba8be446cad600aabb"
+    },
+    "fixtures/smoke_math.jsonl": {
+      "rows": 40,
+      "sha256": "a80cbd42d37defcb319d7f2696b5e36de31762709f43b5d400e60e2de0e8f22b"
+    }
+  }
+}

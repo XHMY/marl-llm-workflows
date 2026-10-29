@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=logs/%j_%x.out
+#SBATCH --error=logs/%j_%x.err
+#SBATCH --gres=gpu:${N_GPUS}
+#SBATCH --cpus-per-gpu=${CPUS_PER_GPU}
+#SBATCH --mem-per-gpu=${MEM_PER_GPU}
+${SBATCH_DIRECTIVES}
+# Rendered by "scripts/launch.py eval" from scripts/slurm/eval.sbatch.tmpl.
+# The evaluator starts its own LoRA-enabled vLLM server and appends one line per checkpoint
+# to its --output-json file, so an interrupted job can be re-submitted.
+
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+cd ${REPO_ROOT}
+${ENV_ACTIVATE}
+set -x
+${ULIMIT}
+
+export VLLM_USE_V1=1
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
+
+${COMMAND}

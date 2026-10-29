@@ -1,0 +1,48 @@
+#!/bin/bash
+#SBATCH --job-name=voting-qwen3_1.7b-multi_lora-deepcoder_primeintellect
+#SBATCH --output=logs/%j_%x.out
+#SBATCH --error=logs/%j_%x.err
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-gpu=16
+#SBATCH --mem-per-gpu=64G
+#SBATCH --partition=preempt
+#SBATCH --nodes=1
+#SBATCH --constraint=l40s
+#SBATCH --requeue
+#SBATCH --time=0-05:50:00
+# Rendered by scripts/launch.py from scripts/slurm/train.sbatch.tmpl.
+# Re-submitting the same command resumes from the latest checkpoint of the experiment directory;
+# a finished run prints "RUN_COMPLETE global_step=N" and exits 0.
+
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+cd <REPO>
+source scripts/env.sh
+set -x
+ulimit -n 1048576
+
+export RAY_TMPDIR=/tmp/ray_${USER}
+export VLLM_ATTENTION_BACKEND=FLASH_ATTN
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"
+export VLLM_USE_V1=1
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
+export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
+export VLLM_LOGGING_LEVEL=INFO
+export VERL_LOGGING_LEVEL=INFO
+
+python -m marl_workflows.trainer.train \
+    marl.task=deepcoder \
+    marl.workflow=voting \
+    data.max_prompt_length=10240 \
+    data.max_response_length=2048 \
+    actor_rollout_ref.model.path=Qwen/Qwen3-1.7B \
+    trainer.project_name=marl-llm-workflows \
+    trainer.experiment_name=voting-qwen3_1.7b-multi_lora-deepcoder_primeintellect \
+    trainer.n_gpus_per_node=2 \
+    'trainer.agent_names=[generator,aggregator]' \
+    trainer.share_policy=False \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=23554 \
+    +rllm.workflow.n_votes=3 \
+    rllm.workflow.use_final_outcome_reward=true \
+    rllm.workflow.code_executor_workers=32 \
+    +data.dataset_name=deepcoder_primeintellect

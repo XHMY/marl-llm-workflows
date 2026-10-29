@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=logs/%j_%x.out
+#SBATCH --error=logs/%j_%x.err
+#SBATCH --gres=gpu:${N_GPUS}
+#SBATCH --cpus-per-gpu=${CPUS_PER_GPU}
+#SBATCH --mem-per-gpu=${MEM_PER_GPU}
+${SBATCH_DIRECTIVES}
+# Rendered by scripts/launch.py from scripts/slurm/train.sbatch.tmpl.
+# Re-submitting the same command resumes from the latest checkpoint of the experiment directory;
+# a finished run prints "RUN_COMPLETE global_step=N" and exits 0.
+
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+cd ${REPO_ROOT}
+${ENV_ACTIVATE}
+set -x
+${ULIMIT}
+
+export RAY_TMPDIR=/tmp/ray_$${USER}
+export VLLM_ATTENTION_BACKEND=FLASH_ATTN
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"
+export VLLM_USE_V1=1
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+export VLLM_ENGINE_ITERATION_TIMEOUT_S=100000000000
+export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
+export VLLM_LOGGING_LEVEL=INFO
+export VERL_LOGGING_LEVEL=INFO
+
+${COMMAND}

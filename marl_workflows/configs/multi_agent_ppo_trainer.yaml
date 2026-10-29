@@ -1,0 +1,173 @@
+# Primary Hydra config of marl_workflows.trainer.train.
+#
+# Extends verl's ppo_trainer.yaml by search path, as the research fork's
+# rllm/trainer/config/multi_agent_ppo_trainer.yaml does. It cannot extend rLLM's
+# agent_ppo_trainer.yaml by path: that file sets hydra.searchpath, which Hydra 1.3 accepts only
+# in the primary config ("Overriding hydra.searchpath is only supported from the primary
+# config"). The rLLM keys the trainer needs are therefore declared here; the remaining
+# agent_ppo_trainer.yaml keys (rllm.distill, rllm.sdk, rllm.filter_token_mismatch, fireworks)
+# belong to code paths this package does not use (the workflow trainer reads rllm.distill
+# with .get()).
+#
+# Every value below is copied from the fork's yaml unless marked NEW or CHANGED.
+# Workflow-specific leaves (n_votes, max_iterations, max_subtasks, n_virtual_generators,
+# use_rubric_reward, voter_names) are not declared: paper command lines pass them with "+", and
+# the recipes read them with .get(). The per-role trainer options are declared as empty parent
+# dicts only, so the paper's "+trainer.x.y=v" overrides keep working verbatim (Hydra rejects
+# "+key=v" when the key already exists).
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+algorithm:
+  adv_estimator: grpo
+
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 32
+    target_modules: all-linear
+    use_remove_padding: true
+  actor:
+    ppo_mini_batch_size: 64
+    loss_agg_mode: seq-mean-token-mean
+    use_dynamic_bsz: true
+    ppo_max_token_len_per_gpu: 51200
+    ppo_micro_batch_size_per_gpu: 4
+    clip_ratio_high: 0.28
+    fsdp_config:
+      param_offload: false
+      optimizer_offload: false
+    ppo_epochs: 1
+    optim:
+      lr: 2e-5
+      # Most paper cells ran with 0; configs/paper_runs.yaml is authoritative for reproductions.
+      lr_warmup_steps: 15
+      # The scheduler is constant-with-warmup in practice (no decay over the run horizon).
+      warmup_style: cosine
+  rollout:
+    mode: async
+    name: vllm
+    n: 8
+    temperature: 0.7
+    tensor_model_parallel_size: 1
+    enforce_eager: false
+    gpu_memory_utilization: 0.85
+    max_num_seqs: 2048
+    max_num_batched_tokens: 16384
+    log_prob_micro_batch_size_per_gpu: 8
+    disable_log_stats: false
+    enable_prefix_caching: true
+    enable_chunked_prefill: true
+    agent:
+      num_workers: 0
+    val_kwargs:
+      do_sample: true
+      n: 1
+      temperature: 0.7
+    # engine_kwargs.vllm.max_loras is injected (= number of roles). Optional, off by default
+    # (paper behaviour): +actor_rollout_ref.rollout.engine_kwargs.vllm.logprobs_mode=processed_logprobs
+    # changes what the logged per-role chi2_token / kl / training_ppl measure.
+
+data:
+  train_batch_size: 64
+  val_batch_size: 2048
+  gen_batch_size: ${mul:${data.train_batch_size},${rllm.rejection_sample.multiplier}}
+  # The fork's patched verl dataset read parquet with polars; NEW here as a custom class.
+  custom_cls:
+    path: pkg://marl_workflows.data.rl_dataset
+    name: PolarsRLHFDataset
+
+rllm:
+  agent:
+    name: multi_agent_system
+    max_steps: 20
+    trajectory_timeout: null
+    overlong_filter: false
+    agent_args: {}
+    engine_args: {}
+  env:
+    name: custom
+    env_args: {}
+  workflow:
+    use_workflow: true
+    name: single_turn_workflow
+    use_final_outcome_reward: true
+    workflow_args:
+      reward_function: null
+      agent_cls: null
+      agent_args: {}
+      env_cls: null
+      env_args: {}
+      timeout: 1e6
+      gamma: 0.0
+      reward_bonus_coeff: 0.0
+    n_parallel_tasks: 512
+    retry_limit: 3
+    # <=0 with marl.task=deepcoder: one executor process per allocated CPU.
+    code_executor_workers: 0
+    # NEW parent dict: +rllm.workflow.initial_lora_weights.<role>=<adapter dir>
+    initial_lora_weights: {}
+  disable_thinking: true
+  accumulate_reasoning: false
+  mask_truncated_samples: false
+  stepwise_advantage:
+    enable: true
+    mode: per_step
+    normalize_by_steps: false
+  compact_filtering:
+    enable: false
+    mask_max_prompt_length_exceeded: true
+    mask_max_response_length_exceeded: true
+    mask_env_done: false
+    mask_max_turns_exceeded: false
+    mask_timeout: true
+    mask_unknown: false
+    mask_error: true
+  rejection_sample:
+    enable: false
+    multiplier: 1
+
+trainer:
+  nnodes: 1
+  # CHANGED (fork: multi-agent-workflow); paper runs use rllm-workflow-MARL-v2 via the launcher.
+  project_name: marl-llm-workflows
+  experiment_name: multi-agent-training
+  log_episodes: false
+  episode_log_dir: logs/${trainer.project_name}/${trainer.experiment_name}
+  # Replaced by the recipe's role list when left at ['default'].
+  agent_names: ['default']
+  share_policy: false
+  val_before_train: true
+  log_freq: 1
+  test_freq: 10
+  save_freq: 5
+  total_training_steps: 500
+  # NEW parent: +trainer.loss_weight_per_role.mode=length|static ; .weights.<role> (SP only)
+  loss_weight_per_role: {}
+  # NEW parent: +trainer.kl_loss_coef_per_role.<role>=<float> (IP with use_kl_loss)
+  kl_loss_coef_per_role: {}
+  # NEW parent: +trainer.wallclock_stop.enable=true ; .deadline_epoch ; .margin_s (900)
+  wallclock_stop: {}
+  # NEW: count episodes dropped before their first step in val pass@k (false = paper behaviour)
+  val_count_dropped_episodes: false
+  # NEW: assert the registered vLLM LoRA ids after the first training rollout
+  check_lora_registration: true
+  # NEW: e.g. qwen3_1.7b_s300; written to training_metadata.json as "base_model"
+  base_model_tag: null
+
+# NEW: recipe selection (marl_workflows.recipes); null datasets fall back to the recipe's.
+marl:
+  task: null
+  workflow: null
+  train_dataset: null
+  val_dataset: null
+
+ray_init:
+  # CHANGED (fork: true, dashboard_host 0.0.0.0): no public dashboard by default.
+  include_dashboard: false

@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --job-name=marl-eval
+#SBATCH --output=logs/%j_%x.out
+#SBATCH --error=logs/%j_%x.err
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-gpu=8
+#SBATCH --mem-per-gpu=64G
+#SBATCH --partition=dgxh,preempt
+#SBATCH --account=eecs
+#SBATCH --nodes=1
+#SBATCH --time=1-00:00:00
+#SBATCH --constraint=h100|h200
+#SBATCH --exclude=dgxh-1
+#SBATCH --requeue
+# Rendered by "scripts/launch.py eval" from scripts/slurm/eval.sbatch.tmpl.
+# The evaluator starts its own LoRA-enabled vLLM server and appends one line per checkpoint
+# to its --output-json file, so an interrupted job can be re-submitted.
+
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+cd <REPO>
+source scripts/env.sh
+set -x
+
+
+export VLLM_USE_V1=1
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
+
+python -m marl_workflows.eval.evaluate_checkpoints --task-type math --checkpoints-dir checkpoints/marl-llm-workflows --dataset dapo_math --use-training-lengths

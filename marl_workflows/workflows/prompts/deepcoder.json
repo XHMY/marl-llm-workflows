@@ -1,0 +1,107 @@
+{
+  "deepcoder_single_agent_prompts": {
+    "generator_initial": {
+      "template": "You are an expert competitive programmer. Solve the following programming problem.\n\nProblem:\n{problem}\n\nRequirements:\n- Write clean, efficient Python code\n- Handle all edge cases\n- Your solution must be complete and runnable\n- Output your code in a markdown code block with ```python\n\nProvide your solution:",
+      "description": "Single-agent code generation prompt",
+      "required_variables": ["problem"]
+    },
+    "generator_with_test_feedback": {
+      "template": "Your previous solution failed some test cases. Here are the results:\n\n{test_feedback}\n\nPlease analyze these failures carefully and create a corrected solution.\n\nOriginal Problem:\n{problem}\n\nRequirements:\n- Fix the issues identified in the test failures\n- Ensure your solution handles all edge cases\n- Output your code in a markdown code block with ```python\n\nProvide your corrected solution:",
+      "description": "Generation prompt after test failures",
+      "required_variables": ["problem", "test_feedback"]
+    }
+  },
+  "deepcoder_evaluator_optimizer_prompts": {
+    "generator_initial": {
+      "template": "You are an expert competitive programmer. Solve the following programming problem.\n\nProblem:\n{problem}\n\nRequirements:\n- Write clean, efficient Python code\n- Handle all edge cases\n- Your solution must be complete and runnable\n- Output your code in a markdown code block with ```python\n\nProvide your solution:",
+      "description": "Initial code generation prompt",
+      "required_variables": ["problem"]
+    },
+    "generator_with_test_feedback": {
+      "template": "Your previous solution failed some test cases. Here are the results:\n\n{test_feedback}\n\nPlease analyze these failures carefully and create a corrected solution.\n\nRequirements:\n- Fix the issues identified in the test failures\n- Ensure your solution handles all edge cases\n- Output your code in a markdown code block with ```python\n\nProvide your corrected solution:",
+      "description": "Generation prompt after test failures (start of new eval-opt round)",
+      "required_variables": ["test_feedback"]
+    },
+    "evaluator_critique": {
+      "template": "You are a code reviewer evaluating the solution above for correctness.\n\nYour task is to analyze the code for:\n1. Logical correctness - Does the algorithm solve the problem?\n2. Edge case handling - Are boundary conditions handled?\n3. Implementation bugs - Are there any coding errors?\n4. Efficiency - Is the solution efficient enough for the constraints?\n\nIMPORTANT:\n- You are reviewing the code LOGIC, not running tests\n- Provide your verdict as \\boxed{Correct} or \\boxed{Incorrect}\n- If incorrect, briefly explain the main issue(s)\n- Do NOT reveal the correct solution",
+      "description": "Code evaluation prompt for logic review",
+      "required_variables": []
+    },
+    "generator_refinement": {
+      "template": "Based on the reviewer's feedback above, please create an improved solution.\n\nRequirements:\n- Address the issues identified in the review\n- Use a different approach if the previous logic was fundamentally flawed\n- Ensure all edge cases are handled\n- Output your code in a markdown code block with ```python\n\nProvide your improved solution:",
+      "description": "Refinement prompt after evaluator feedback",
+      "required_variables": []
+    }
+  },
+  "deepcoder_voting_prompts": {
+    "generator": {
+      "template": "You are an expert competitive programmer. Solve the following programming problem.\n\nProblem:\n{problem}\n\nRequirements:\n- Write clean, efficient Python code\n- Handle all edge cases\n- Your solution must be complete and runnable\n- Output your code in a markdown code block with ```python\n\nProvide your solution:",
+      "description": "Code generation prompt for parallel voting",
+      "required_variables": ["problem"]
+    },
+    "generator_with_test_feedback": {
+      "template": "Your previous solution failed some test cases. Here are the results:\n\n{test_feedback}\n\nPlease analyze these failures carefully and create a corrected solution.\n\nOriginal Problem:\n{problem}\n\nRequirements:\n- Fix the issues identified in the test failures\n- Ensure your solution handles all edge cases\n- Output your code in a markdown code block with ```python\n\nProvide your corrected solution:",
+      "description": "Generation prompt after test failures for voting workflow",
+      "required_variables": ["problem", "test_feedback"]
+    },
+    "aggregator": {
+      "template": "You are an expert code reviewer. Your task is to review multiple code solutions to the same problem and select the best one.\n\nProblem:\n{problem}\n\nSolutions to review:{solutions}\n\nInstructions:\n1. Analyze each solution for logical correctness\n2. Check for proper edge case handling\n3. Look for potential bugs or errors\n4. Consider code efficiency and readability\n5. Select the solution number most likely to pass all tests\n6. Output your selection as \\boxed{{N}} where N is the solution number (1, 2, 3, etc.)\n\nYour selection:",
+      "description": "Aggregation prompt for selecting the best code solution",
+      "required_variables": ["problem", "solutions"]
+    }
+  },
+  "deepcoder_orchestrator_workers_prompts": {
+    "orchestrator_propose": {
+      "template": "You are an expert programming strategist. Your task is to propose at most {max_subtasks} DIFFERENT solution strategies for the following programming problem. Each strategy should represent a distinct algorithmic approach.\n\nProblem:\n{problem}\n\nInstructions:\n1. Think about different algorithmic techniques that could solve this problem\n2. Propose at most {max_subtasks} distinct approaches (e.g., greedy, dynamic programming, brute force with pruning, divide and conquer, etc.)\n3. Each strategy should be a brief description of the approach, NOT a solution\n4. Do NOT solve the problem — only describe the approaches\n5. Format your response as:\n   STRATEGY 1: [description of first approach]\n   STRATEGY 2: [description of second approach]\n   (and so on, up to {max_subtasks} strategies maximum)\n\nPropose strategies now:",
+      "description": "Prompt for orchestrator to propose distinct coding strategies",
+      "required_variables": ["problem", "max_subtasks"]
+    },
+    "worker_full_solve": {
+      "template": "You are an expert competitive programmer. Solve the following problem using the specified strategy.\n\nProblem:\n{problem}\n\nAssigned strategy: {strategy}\n\nInstructions:\n1. Follow the assigned strategy as your primary approach\n2. Solve the COMPLETE problem step by step\n3. Write clean, efficient Python code\n4. Handle all edge cases\n5. Output your code in a markdown code block with ```python\n\nProvide your solution:",
+      "description": "Prompt for worker to solve the full problem using an assigned strategy",
+      "required_variables": ["problem", "strategy"]
+    },
+    "orchestrator_compare": {
+      "template": "You are an expert code reviewer and judge. Multiple programmers have each attempted to solve the same problem using different strategies. Compare their complete solutions and determine the best one.\n\nOriginal problem:\n{problem}\n\nComplete solutions:{solutions}\n\nInstructions:\n1. Read each complete solution carefully\n2. Check the algorithmic correctness of each solution\n3. Consider edge case handling and efficiency\n4. Identify which solutions are most likely correct\n5. Output the best solution as a complete, runnable Python program in a markdown code block with ```python\n\nYour judgment:",
+      "description": "Prompt for synthesizer to compare complete solutions and pick the best",
+      "required_variables": ["problem", "solutions"]
+    }
+  },
+  "deepcoder_evaluator_optimizer_v2_prompts": {
+    "generator_initial": {
+      "template": "You are an expert competitive programmer. Solve the following programming problem.\n\nProblem:\n{problem}\n\nRequirements:\n- Write clean, efficient Python code\n- Handle all edge cases\n- Your solution must be complete and runnable\n- Output your code in a markdown code block with ```python\n\nProvide your solution:",
+      "description": "Initial code generation prompt (V2)",
+      "required_variables": ["problem"]
+    },
+    "generator_with_test_feedback": {
+      "template": "Your previous solution failed some test cases. Here are the results:\n\n{test_feedback}\n\nPlease analyze these failures carefully and create a corrected solution.\n\nRequirements:\n- Fix the issues identified in the test failures\n- Ensure your solution handles all edge cases\n- Output your code in a markdown code block with ```python\n\nProvide your corrected solution:",
+      "description": "Generation prompt after test failures (V2)",
+      "required_variables": ["test_feedback"]
+    },
+    "evaluator_critique": {
+      "template": "You are a code reviewer checking a solution for correctness.\n\nProblem:\n{problem}\n\nCode to review:\n{solution}\n\nYour task is to analyze the code for:\n1. Logical correctness - Does the algorithm solve the problem?\n2. Edge case handling - Are boundary conditions handled?\n3. Implementation bugs - Are there any coding errors?\n\nIMPORTANT:\n- You are reviewing the code LOGIC, not running tests\n- Provide your verdict as \\boxed{{Correct}} or \\boxed{{Incorrect}}\n- If incorrect, point out where the logic goes wrong and explain why it is flawed\n- Do NOT solve the problem yourself or suggest the correct approach",
+      "description": "Self-contained code evaluation prompt embedding problem and code. Evaluator pinpoints logic flaws without solving the problem (V2)",
+      "required_variables": ["problem", "solution"]
+    },
+    "generator_refinement": {
+      "template": "A reviewer identified an issue in your code:\n\n{feedback}\n\nRevise your solution to fix the identified issue.\n\nRequirements:\n- Your previous code is shown above in the conversation\n- Keep the parts that are correct — do not rewrite the entire solution\n- Focus on correcting the flawed part and adjusting any logic that depends on it\n- Output your code in a markdown code block with ```python\n\nProvide your revised solution:",
+      "description": "Refinement prompt embedding reviewer feedback. Encourages incremental fixes referencing prior code (V2)",
+      "required_variables": ["feedback"]
+    }
+  },
+  "metadata": {
+    "version": "1.4",
+    "created_date": "2026-01-08",
+    "updated_date": "2026-04-01",
+    "description": "Prompt templates for Deepcoder workflows",
+    "usage_notes": [
+      "All templates use Python string formatting with named placeholders",
+      "The \\boxed{} format requires double braces due to Python string formatting",
+      "deepcoder_single_agent_prompts: Used by SingleAgentDeepcodeWorkflow",
+      "deepcoder_evaluator_optimizer_prompts: Used by DeepcodeEvaluatorOptimizerWorkflow (V1)",
+      "deepcoder_evaluator_optimizer_v2_prompts: Used by DeepcodeEvaluatorOptimizerV2Workflow (V2 multi-turn)",
+      "deepcoder_voting_prompts: Used by DeepcodeVotingWorkflow",
+      "deepcoder_orchestrator_workers_prompts: Used by DeepcodeOrchestratorWorkersWorkflow"
+    ]
+  }
+}

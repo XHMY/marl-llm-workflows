@@ -1,0 +1,46 @@
+marl-llm-workflows
+Copyright 2026 The marl-llm-workflows authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product builds on, and contains files derived from, the following projects,
+both licensed under the Apache License, Version 2.0. They are included unmodified
+as git submodules under third_party/, where each keeps its own LICENSE file.
+
+  rLLM (https://github.com/rllm-org/rllm), pinned at commit
+  186d0bbbb5bfe18f8f6b8e4eac6db9379cf27738.
+  rLLM's LICENSE file is Apache-2.0; its pyproject.toml classifier says MIT. The
+  derived code is treated as Apache-2.0.
+
+  verl (https://github.com/volcengine/verl), pinned at tag v0.6.1
+  (d62da4950573d7a4b7ef2362337952e7ab59e78d).
+  Copyright 2024 Bytedance Ltd. and/or its affiliates.
+
+Derived files
+-------------
+Each file below keeps the upstream copyright header and states the modification
+("Modified 2026 by the marl-llm-workflows authors: <summary>"), as required by
+Sections 4(b) and 4(c) of the Apache License. Line numbers refer to the pins above
+unless marked as the research fork.
+
+  marl_workflows/verl_ext/lora_utils.py
+      verl verl/utils/fsdp_utils.py:569-667
+      (layered_summon_lora_params, collect_lora_params; adapter_name argument added)
+  marl_workflows/verl_ext/workers.py
+      verl verl/workers/fsdp_workers.py rollout_mode (:651-732) and LoRA save (:1033-1080)
+  marl_workflows/verl_ext/vllm_rollout.py
+      verl verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py:627-650
+  marl_workflows/engine/verl_engine.py
+      verl verl/experimental/agent_loop/agent_loop.py:89-110
+  marl_workflows/trainer/trainer.py
+      rLLM rllm/trainer/verl/agent_workflow_trainer.py:98-126, 128-499, 831-863
+  marl_workflows/trainer/task_runner.py
+      rLLM rllm/trainer/verl/train_agent_ppo.py:63-223
+  marl_workflows/rewards/code_reward.py
+      rLLM rllm/rewards/code_reward.py (as rewritten in the research fork)
+  marl_workflows/data/rl_dataset.py
+      verl verl/utils/dataset/rl_dataset.py:152-170
+  marl_workflows/data/prepare_*.py
+      rLLM examples/* data preparation scripts (research fork versions)
+  marl_workflows/workflows/**
+      written in the rLLM research fork, originally rllm/workflows/* and examples/*

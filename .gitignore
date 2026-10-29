@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Run outputs (never committed)
+checkpoints/
+outputs/
+logs/
+wandb/
+eval_results*.jsonl
+evaluation_trajectories/
+data_cache/
+*.sbatch.generated

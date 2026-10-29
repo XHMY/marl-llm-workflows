@@ -1,0 +1,116 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marl-llm-workflows"
+version = "0.1.0"
+description = "Multi-agent RL training of LLM workflows (shared vs per-role LoRA policies) on rLLM and verl"
+requires-python = ">=3.11,<3.12"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+]
+# Exact pins mirror requirements/stack.txt (tests/test_upstream_pins.py keeps them equal).
+# rllm and verl are not dependencies: install them editable from third_party/ with --no-deps.
+dependencies = [
+    # core stack
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "vllm==0.11.0",
+    "transformers==4.56.1",
+    "peft==0.18.1",
+    "ray[default]==2.54.0",
+    "flash-attn==2.8.3",
+    "tensordict==0.10.0",
+    "accelerate==1.12.0",
+    "liger-kernel==0.7.0",
+    "torchdata==0.11.0",
+    # data
+    "datasets==4.6.1",
+    "polars==1.38.1",
+    "pyarrow==23.0.1",
+    "pandas==3.0.1",
+    "numpy==1.26.4",
+    "safetensors==0.7.0",
+    "pillow==12.1.1",
+    "dill==0.4.0",
+    # config, logging, API
+    "hydra-core==1.3.2",
+    "omegaconf==2.3.0",
+    "wandb==0.25.0",
+    "tensorboard==2.20.0",
+    "openai==2.24.0",
+    "codetiming==1.4.0",
+    "pybind11==3.0.2",
+    "packaging==25.0",
+    # math grading
+    "sympy==1.14.0",
+    "pylatexenc==2.10",
+    "antlr4-python3-runtime==4.9.3",
+    # rllm@186d0bbb core dependencies
+    "mcp==1.26.0",
+    "eval-protocol==0.3.20",
+    "fastapi==0.135.1",
+    "uvicorn==0.41.0",
+    "pydantic==2.12.5",
+    "wrapt==2.1.1",
+    "asgiref==3.11.1",
+    "qwen-vl-utils==0.0.14",
+    # unpinned utilities
+    "requests",
+    "tqdm",
+    "psutil",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff==0.15.4", "pre-commit"]
+
+[project.scripts]
+marl-train = "marl_workflows.trainer.train:main"
+marl-eval = "marl_workflows.eval.evaluate_checkpoints:cli"
+marl-launch = "marl_workflows.launch:cli"
+
+[tool.setuptools.packages.find]
+include = ["marl_workflows*"]
+
+[tool.setuptools.package-data]
+marl_workflows = [
+    "configs/*.yaml",
+    "workflows/prompts/*.json",
+    "data/*.json.gz",
+    "data/checksums.json",
+    "data/fixtures/*.jsonl",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["third_party"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Bounded copies of upstream code keep upstream line lengths so that diffs stay readable.
+"marl_workflows/trainer/trainer.py" = ["E501"]
+"marl_workflows/trainer/task_runner.py" = ["E501"]
+"marl_workflows/rewards/code_reward.py" = ["E501"]
+"marl_workflows/verl_ext/lora_utils.py" = ["E501"]
+"marl_workflows/workflows/**" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["marl_workflows"]
+known-third-party = ["rllm", "verl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not gpu'"
+asyncio_mode = "auto"
+markers = [
+    "gpu: needs a CUDA GPU",
+    "stack: needs heavy rllm/verl/vllm imports (CPU ok)",
+    "slow: long-running",
+]

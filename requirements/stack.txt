@@ -1,0 +1,62 @@
+# Exact pins of the training stack (direct dependencies only).
+# Versions are taken from the research environment that produced the paper runs
+# (conda env "rllm", Python 3.11.14); the full transitive list is lock-fork-env.txt.
+# rllm and verl are NOT listed: they are installed editable from third_party/ with --no-deps.
+#
+# Install torch first from the CUDA 12.8 index (the env has torch 2.8.0+cu128):
+#   pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+# flash-attn needs: pip install flash-attn==2.8.3 --no-build-isolation
+
+# --- core stack
+torch==2.8.0
+torchvision==0.23.0
+vllm==0.11.0
+transformers==4.56.1
+peft==0.18.1
+ray[default]==2.54.0
+flash-attn==2.8.3
+tensordict==0.10.0
+accelerate==1.12.0
+liger-kernel==0.7.0
+torchdata==0.11.0
+
+# --- data
+datasets==4.6.1
+polars==1.38.1
+pyarrow==23.0.1
+pandas==3.0.1
+numpy==1.26.4
+safetensors==0.7.0
+pillow==12.1.1
+dill==0.4.0
+
+# --- config, logging, API
+hydra-core==1.3.2
+omegaconf==2.3.0
+wandb==0.25.0
+tensorboard==2.20.0
+openai==2.24.0
+codetiming==1.4.0
+pybind11==3.0.2
+packaging==25.0
+
+# --- math grading
+sympy==1.14.0
+pylatexenc==2.10
+antlr4-python3-runtime==4.9.3
+
+# --- rllm@186d0bbb core dependencies (imported by rllm modules we use or by its package init)
+mcp==1.26.0
+eval-protocol==0.3.20
+fastapi==0.135.1
+uvicorn==0.41.0
+pydantic==2.12.5
+wrapt==2.1.1
+asgiref==3.11.1
+qwen-vl-utils==0.0.14
+
+# --- unpinned utilities
+requests
+tqdm
+psutil
+pyyaml

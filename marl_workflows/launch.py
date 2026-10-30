@@ -652,6 +652,15 @@ def read_slurm_conf(path: str | os.PathLike[str]) -> tuple[dict[str, str], list[
     return meta, directives
 
 
+def meta_exports(meta: dict[str, str]) -> str:
+    """Shell ``export`` lines for the ``ENV_<NAME>=<value>`` META keys of a SLURM conf.
+
+    ``# META: ENV_NCCL_P2P_DISABLE=1`` becomes ``export NCCL_P2P_DISABLE=1`` in the rendered job, after the
+    environment activation line; node-type settings such as NCCL transport flags live in the conf this way.
+    """
+    return "\n".join(f"export {k[4:]}={v}" for k, v in meta.items() if k.startswith("ENV_") and len(k) > 4)
+
+
 def _with_time(directives: list[str], time_limit: str | None) -> list[str]:
     if not time_limit:
         return directives
@@ -689,6 +698,7 @@ def render_sbatch(
         SBATCH_DIRECTIVES="\n".join(_with_time(directives, time_limit)),
         REPO_ROOT=root or str(repo_root()),
         ENV_ACTIVATE=env_activate,
+        EXTRA_ENV=meta_exports(meta),
         ULIMIT="ulimit -n 1048576" if spec.task == "deepcoder" else "",
         COMMAND=command,
     )
@@ -728,6 +738,7 @@ def render_eval_sbatch(
         SBATCH_DIRECTIVES="\n".join(_with_time(directives, time_limit)),
         REPO_ROOT=root or str(repo_root()),
         ENV_ACTIVATE=env_activate,
+        EXTRA_ENV=meta_exports(meta),
         ULIMIT="ulimit -n 1048576" if normalize_task(task) == "deepcoder" else "",
         COMMAND=command,
     )

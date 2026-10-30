@@ -322,6 +322,17 @@ def test_slurm_confs(conf: Path) -> None:
     assert not any("--gres" in d or "--mem-per-gpu" in d for d in directives)
 
 
+def test_meta_env_exports() -> None:
+    assert launch.meta_exports({"GPU_TYPE": "L40S", "ENV_NCCL_P2P_DISABLE": "1"}) == "export NCCL_P2P_DISABLE=1"
+    assert launch.meta_exports({"GPU_TYPE": "H100"}) == ""
+    spec = LaunchSpec(task="math", workflow="voting", share_policy=False, scale="1.7B")
+    l40s = launch.render_sbatch(spec, REPO / "configs" / "slurm" / "preempt_l40s.conf", root=ROOT_PLACEHOLDER)
+    h100 = launch.render_sbatch(spec, REPO / "configs" / "slurm" / "dgxh_preempt_h100.conf", root=ROOT_PLACEHOLDER)
+    assert "\nexport NCCL_P2P_DISABLE=1\n" in l40s
+    assert "NCCL_P2P_DISABLE" not in h100
+    assert l40s.index("source scripts/env.sh") < l40s.index("export NCCL_P2P_DISABLE=1") < l40s.index("python -m")
+
+
 def test_resources_from_conf() -> None:
     spec = LaunchSpec(task="deepcoder", workflow="voting", share_policy=False, scale="1.7B")
     meta, _ = launch.read_slurm_conf(REPO / "configs" / "slurm" / "preempt_l40s.conf")

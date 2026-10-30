@@ -98,7 +98,9 @@ call per role per training step, so under IP the learning-rate scheduler advance
 | `--env-activate` | `source scripts/env.sh` | Shell line run in the job before training (e.g. `conda activate marl && source scripts/env.sh`). |
 
 SLURM confs (`configs/slurm/*.conf`) hold `#SBATCH` lines plus `# META:` lines read by the launcher:
-`GPU_TYPE`, and `CPUS_PER_GPU_{MATH,CODE}` / `MEM_PER_GPU_{MATH,CODE}`. `configs/slurm/example.conf`
+`GPU_TYPE`, `CPUS_PER_GPU_{MATH,CODE}` / `MEM_PER_GPU_{MATH,CODE}`, and `ENV_<NAME>=<value>` lines, each
+rendered as `export <NAME>=<value>` in the job (the L40S conf sets `NCCL_P2P_DISABLE=1`: a GPU pair on two
+NUMA sockets hangs the first FSDP broadcast over PCIe P2P on those nodes). `configs/slurm/example.conf`
 is a template for other clusters.
 
 ## Code reward sandbox

@@ -19,6 +19,7 @@
 unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
 cd <REPO>
 source scripts/env.sh
+
 set -x
 
 

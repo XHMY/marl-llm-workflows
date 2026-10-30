@@ -17,6 +17,7 @@
 unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
 cd <REPO>
 source scripts/env.sh
+export NCCL_P2P_DISABLE=1
 set -x
 ulimit -n 1048576
 

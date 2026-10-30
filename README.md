@@ -1,5 +1,7 @@
 # marl-llm-workflows
 
+**Project page:** https://xhmy.github.io/marl-llm-workflows/
+
 Multi-agent reinforcement learning for LLM workflows. The package trains the roles of a workflow
 (Voting, Evaluator-Optimizer, Orchestrator-Workers) with GRPO from the episode outcome, either with
 one LoRA adapter per role (**IP**, isolated policies) or with one adapter shared by all roles
@@ -18,7 +20,7 @@ subclasses, registry hooks, or bounded and marked copies of upstream functions; 
 ## Install
 
 ```bash
-git clone --recurse-submodules <repository-url> marl-llm-workflows && cd marl-llm-workflows
+git clone --recurse-submodules https://github.com/XHMY/marl-llm-workflows.git && cd marl-llm-workflows
 conda create -n marl python=3.11 -y && conda activate marl
 pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements/stack.txt
@@ -125,7 +127,8 @@ marl_workflows/
 configs/         paper_runs.yaml (paper-run registry), slurm/*.conf (cluster settings)
 scripts/         launch.py, env.sh, smoke_gpu.sh, export_paper_runs.py, merge_lora_to_base.py, slurm/ templates
 examples/        copy-paste commands per cell
-docs/            installation, reproducing, configuration, architecture, design, upstream-patches
+docs/            installation, reproducing, configuration, architecture, design, upstream-patches;
+                 index.html is the project page (GitHub Pages serves this folder)
 third_party/     rllm and verl submodules (unmodified)
 tests/           CPU tests; tests/gpu needs a GPU
 ```

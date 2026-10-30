@@ -152,10 +152,13 @@ file keeps the upstream copyright header and states its modifications.
 ## Citation
 
 ```bibtex
-@misc{marl-llm-workflows,
-  title  = {When Does Multi-Agent RL Improve LLM Workflows? Workflow, Scale, and Policy-Sharing Tradeoffs},
-  author = {TBD},
-  year   = {2026},
-  note   = {Citation to be added on publication}
+@misc{zeng2026doesmultiagentrlimprove,
+  title         = {When Does Multi-Agent RL Improve LLM Workflows? Workflow, Scale, and Policy-Sharing Tradeoffs},
+  author        = {Yifan Zeng and Yiran Wu and Yaolun Zhang and Wentian Zhao and Kun Wan and Qingyun Wu and Huazheng Wang},
+  year          = {2026},
+  eprint        = {2605.24202},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2605.24202},
 }
 ```

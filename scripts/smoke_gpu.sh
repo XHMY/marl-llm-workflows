@@ -5,6 +5,7 @@
 #   bash scripts/smoke_gpu.sh            # IP then SP
 #   SMOKE_VARIANTS=ip bash scripts/smoke_gpu.sh
 #   SMOKE_EVAL=1 bash scripts/smoke_gpu.sh   # also evaluate the IP checkpoints on 8 problems
+#   SMOKE_GPUS=2 SMOKE_BATCH=8 bash scripts/smoke_gpu.sh   # two GPUs (FSDP sharding, per-rank adapter sync)
 #
 # Checks: exit code 0; per-role metrics in the console log under IP (the generator takes 3 optimizer
 # steps per training step and the aggregator 1) and global actor metrics under SP; one adapter directory per role (IP) or one shared
@@ -22,6 +23,8 @@ export VLLM_USE_V1=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True VLLM_ALLOW_LONG_MAX_M
 export RAY_TMPDIR="${RAY_TMPDIR:-/tmp/ray_${USER}}"
 OUT="${SMOKE_OUT:-${REPO}/outputs/smoke}"
 VARIANTS="${SMOKE_VARIANTS:-ip sp}"
+GPUS="${SMOKE_GPUS:-1}"          # GPUs per node for the training processes
+BATCH="${SMOKE_BATCH:-4}"        # problems per training step (also the PPO mini-batch)
 mkdir -p "${OUT}"
 
 python -m marl_workflows.data.prepare_smoke
@@ -30,8 +33,8 @@ SMOKE_OVERRIDES=(
     marl.train_dataset=smoke_math marl.val_dataset=smoke_math
     trainer.total_training_steps=2 trainer.save_freq=1 trainer.test_freq=-1 trainer.val_before_train=False
     "trainer.logger=[console]"
-    data.train_batch_size=4 data.val_batch_size=8 data.max_prompt_length=2048 data.max_response_length=512
-    actor_rollout_ref.rollout.n=2 actor_rollout_ref.actor.ppo_mini_batch_size=4
+    "data.train_batch_size=${BATCH}" data.val_batch_size=8 data.max_prompt_length=2048 data.max_response_length=512
+    actor_rollout_ref.rollout.n=2 "actor_rollout_ref.actor.ppo_mini_batch_size=${BATCH}"
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=8192
     actor_rollout_ref.rollout.gpu_memory_utilization=0.4 actor_rollout_ref.rollout.max_num_seqs=64
     rllm.workflow.n_parallel_tasks=16
@@ -47,7 +50,7 @@ run_variant() {
     log="${OUT}/${exp}.log"
     rm -rf "${ckpt}"
 
-    cmd="$(python scripts/launch.py --task math --workflow voting --policy "${policy}" --scale 0.6B --gpus 1 \
+    cmd="$(python scripts/launch.py --task math --workflow voting --policy "${policy}" --scale 0.6B --gpus "${GPUS}" \
         --project smoke --experiment-name "${exp}" --print \
         "${SMOKE_OVERRIDES[@]}" "trainer.default_local_dir=${ckpt}")"
     echo "+ ${cmd}"

@@ -650,7 +650,7 @@
   function m3a(el, D) {
     pairScatter(el, D, {
       id: "fig-m3a", num: "Figure 3a", title: "Selected peak, IP against SP, for every matched pair",
-      caption: "Each point is one matched pair (workflow, scale, task). Above the diagonal, IP peaks higher. Math: separate evaluation of each checkpoint; Code: re-evaluation of the checkpoint selected on the validation series logged during training. IP peaks higher in most pairs.",
+      caption: "Each point is one matched pair (workflow, scale, task). Above the diagonal, IP peaks higher. IP peaks higher in most pairs.",
       x: function (p) { return p.sp_peak; }, y: function (p) { return p.ip_peak; },
       xTitle: function () { return "SP selected peak (%)"; }, yTitle: function () { return "IP selected peak (%)"; },
       upper: "IP higher", lower: "SP higher",

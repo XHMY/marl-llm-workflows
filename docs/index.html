@@ -4,66 +4,100 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>When Does Multi-Agent RL Improve LLM Workflows?</title>
-  <meta name="description" content="Project page for &quot;When Does Multi-Agent RL Improve LLM Workflows? Workflow, Scale, and Policy-Sharing Tradeoffs&quot;.">
-  <style>
-    :root {
-      --bg: #ffffff;
-      --fg: #1f2328;
-      --muted: #59636e;
-      --link: #0969da;
-      --btn-bg: #1f2328;
-      --btn-fg: #ffffff;
-      --btn-off: #d1d9e0;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0d1117;
-        --fg: #e6edf3;
-        --muted: #9198a1;
-        --link: #4493f8;
-        --btn-bg: #e6edf3;
-        --btn-fg: #0d1117;
-        --btn-off: #3d444d;
-      }
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-    }
-    main { max-width: 860px; margin: 0 auto; padding: 64px 16px; text-align: center; }
-    h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.25; margin: 0 0 24px; }
-    .authors { font-size: 1.1rem; margin: 0 0 8px; }
-    .affil { color: var(--muted); margin: 0 0 32px; }
-    .links { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 48px; }
-    .btn {
-      display: inline-block; padding: 8px 20px; border-radius: 999px;
-      background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; font-weight: 600;
-    }
-    .btn.off { background: var(--btn-off); color: var(--muted); cursor: default; }
-    p.note { color: var(--muted); }
-    a { color: var(--link); }
-  </style>
+  <meta name="description" content="Project page for &quot;When Does Multi-Agent RL Improve LLM Workflows? Workflow, Scale, and Policy-Sharing Tradeoffs&quot;: interactive results on which workflows gain from multi-agent RL, why Eval-Opt gains most, why a shared policy learns more slowly, and why isolated policies decline after their peak.">
+  <meta property="og:title" content="When Does Multi-Agent RL Improve LLM Workflows?">
+  <meta property="og:description" content="Workflow, Scale, and Policy-Sharing Tradeoffs: interactive results.">
+  <meta property="og:url" content="https://xhmy.github.io/marl-llm-workflows/">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='18' width='6' height='12' rx='1.5' fill='%232a78d6'/%3E%3Crect x='13' y='10' width='6' height='20' rx='1.5' fill='%23eb6834'/%3E%3Crect x='24' y='4' width='6' height='26' rx='1.5' fill='%231baf7a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
-  <main>
-    <h1>When Does Multi-Agent RL Improve LLM Workflows?<br>Workflow, Scale, and Policy-Sharing Tradeoffs</h1>
-    <p class="authors">
-      Yifan Zeng<sup>1</sup>, Yiran Wu<sup>2</sup>, Yaolun Zhang<sup>1</sup>, Wentian Zhao<sup>3</sup>,
-      Kun Wan<sup>3</sup>, Qingyun Wu<sup>2,4</sup>, Huazheng Wang<sup>1,4</sup>
-    </p>
-    <p class="affil">
-      <sup>1</sup>Oregon State University &nbsp; <sup>2</sup>Pennsylvania State University &nbsp;
-      <sup>3</sup>Adobe Inc. &nbsp; <sup>4</sup>AG2AI, Inc.
-    </p>
-    <div class="links">
-      <span class="btn off">Paper (coming soon)</span>
-      <a class="btn" href="https://github.com/XHMY/marl-llm-workflows">Code</a>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topnav">
+    <div class="inner">
+      <nav aria-label="Sections">
+        <a href="#top">Paper</a>
+        <a href="#setup">Setup</a>
+        <a href="#m1">1 · Gain</a>
+        <a href="#m2">2 · Eval-Opt</a>
+        <a href="#m3">3 · IP vs SP</a>
+        <a href="#m4">4 · Decline</a>
+        <a href="#takeaway">Takeaway</a>
+        <a href="#citation">Citation</a>
+      </nav>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme: automatic">Theme: auto</button>
     </div>
-    <p class="note">This page is under construction.</p>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" id="top">
+      <h1 id="title">When Does Multi-Agent RL Improve LLM Workflows?</h1>
+      <p class="subtitle" id="subtitle">Workflow, Scale, and Policy-Sharing Tradeoffs</p>
+      <p class="authors" id="authors">Yifan Zeng, Yiran Wu, Yaolun Zhang, Wentian Zhao, Kun Wan, Qingyun Wu, Huazheng Wang</p>
+      <p class="affils" id="affils">Oregon State University · Pennsylvania State University · Adobe Inc. · AG2AI, Inc.</p>
+      <div class="links" id="links">
+        <a class="btn" href="https://github.com/XHMY/marl-llm-workflows">Code</a>
+      </div>
+      <details class="abstract" id="abstract-box" open>
+        <summary>Abstract</summary>
+        <p id="abstract"></p>
+      </details>
+      <div class="wrap" style="padding:0; text-align:left; max-width:1120px">
+        <div class="findings" id="findings"></div>
+        <p class="refnote">Figure, table and section numbers in quoted paper text refer to the paper.</p>
+      </div>
+    </section>
+
+    <section class="block wrap" id="setup" aria-labelledby="setup-h">
+      <p class="eyebrow">Setup</p>
+      <h2 id="setup-h">Three workflows, two policy-sharing strategies</h2>
+      <div class="prose"><p id="setup-text"></p></div>
+      <div class="schematic" id="schematic"></div>
+      <div class="node-key" id="node-key"></div>
+      <div class="policy-row" style="margin-top:14px">
+        <div class="policy-card" id="policy-card"></div>
+        <div class="grid-card" id="grid-card"></div>
+      </div>
+    </section>
+
+    <div id="messages"><p class="wrap loading" id="loading">Loading figures…</p></div>
+
+    <section class="block wrap" id="takeaway" aria-labelledby="takeaway-h">
+      <p class="eyebrow">Takeaway</p>
+      <h2 id="takeaway-h">What multi-agent RL needs that single-agent RL does not</h2>
+      <p class="takeaway" id="takeaway-text"></p>
+    </section>
+
+    <section class="block wrap" id="citation" aria-labelledby="cite-h">
+      <p class="eyebrow">Citation</p>
+      <h2 id="cite-h">BibTeX</h2>
+      <div class="bib">
+        <button class="copy-btn" id="copy-bib" type="button">Copy</button>
+        <pre><code id="bibtex"></code></pre>
+      </div>
+    </section>
   </main>
+
+  <footer>
+    <div class="wrap">
+      <p>Code, configurations and reproduction instructions: <a id="foot-code" href="https://github.com/XHMY/marl-llm-workflows">github.com/XHMY/marl-llm-workflows</a>.</p>
+      <p>Charts are interactive: hover or focus a mark for its values, and open “Table view” under a figure for the numbers behind it.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.3/plotly-basic.min.js"></script>
+  <script src="assets/viz.js"></script>
+  <script src="assets/schematic.js"></script>
+  <script src="assets/figures.js"></script>
+  <script src="assets/main.js"></script>
 </body>
 </html>

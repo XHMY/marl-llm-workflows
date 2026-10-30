@@ -47,7 +47,13 @@
     au.innerHTML = "";
     C.authors.forEach(function (a, i) {
       var s = el("span");
-      s.appendChild(document.createTextNode(a.name));
+      if (a.url) {
+        var ln = el("a"); ln.href = a.url; ln.textContent = a.name;
+        ln.target = "_blank"; ln.rel = "noopener";
+        s.appendChild(ln);
+      } else {
+        s.appendChild(document.createTextNode(a.name));
+      }
       var sp = el("sup", null, a.affiliations.join(","));
       s.appendChild(sp);
       au.appendChild(s);
